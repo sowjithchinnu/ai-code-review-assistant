@@ -1,0 +1,32 @@
+# Node Modules
+node_modules/
+
+# Environment Files
+.env
+.env.local
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Build
+dist/
+build/
+.next/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Coverage
+coverage/
+
+# Uploads
+backend/uploads/
+
+# Package Lock (optional)
+# package-lock.json
