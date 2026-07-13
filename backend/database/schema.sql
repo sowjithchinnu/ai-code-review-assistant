@@ -63,3 +63,13 @@ CREATE TABLE review_findings (
         REFERENCES reviews(id)
         ON DELETE CASCADE
 );
+
+CREATE TABLE submissions (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255),
+    language VARCHAR(50),
+    code TEXT,
+    file_name VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
