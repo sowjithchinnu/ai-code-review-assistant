@@ -134,6 +134,7 @@ const getCurrentUser = async (req, res) => {
             user: user.rows[0],
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({
             success: false,
             message: "Server Error",
