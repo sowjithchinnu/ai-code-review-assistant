@@ -26,5 +26,8 @@ Thumbs.db
 coverage/
 
 
+uploads/
+cache/
+
 # Package Lock (optional)
 # package-lock.json

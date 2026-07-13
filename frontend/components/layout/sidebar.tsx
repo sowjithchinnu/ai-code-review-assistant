@@ -14,6 +14,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ScanSearch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./logo";
@@ -58,6 +59,12 @@ const navItems: NavItem[] = [
     href: "/reviews",
     icon: <FileText className="h-5 w-5" />,
     description: "Code review history",
+  },
+  {
+    title: "Analysis",
+    href: "/analysis",
+    icon: <ScanSearch className="h-5 w-5" />,
+    description: "Static analysis results",
   },
   {
     title: "Settings",

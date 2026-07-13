@@ -5,8 +5,10 @@ const authMiddleware = require("../middleware/auth.middleware");
 const upload = require("../middleware/upload.middleware");
 const {
   createSubmission,
+  getAnalysis,
 } = require("../controllers/submission.controller");
 
 router.post("/", authMiddleware, upload.single("file"), createSubmission);
+router.get("/analysis", authMiddleware, getAnalysis);
 
 module.exports = router;

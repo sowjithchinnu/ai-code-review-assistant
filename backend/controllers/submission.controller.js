@@ -1,9 +1,25 @@
 const fs = require("fs");
+const path = require("path");
 const pool = require("../config/db");
 const {
   analyzeJavaScript,
   analyzePython,
 } = require("../services/static-analysis.service");
+
+const CACHE_DIR = path.join(__dirname, "../cache");
+
+function saveAnalysisCache(userId, analysis) {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
+
+  const issues = Array.isArray(analysis) ? analysis : [];
+
+  fs.writeFileSync(
+    path.join(CACHE_DIR, `analysis-${userId}.json`),
+    JSON.stringify({ analysis: issues })
+  );
+}
 
 const createSubmission = async (req, res) => {
   try {
@@ -43,6 +59,8 @@ const createSubmission = async (req, res) => {
       } else if (normalizedLanguage === "python" || normalizedLanguage === "py") {
         analysis = await analyzePython(req.file.path);
       }
+
+      saveAnalysisCache(req.user.userId, analysis);
     }
 
     res.status(201).json({
@@ -59,4 +77,30 @@ const createSubmission = async (req, res) => {
   }
 };
 
-module.exports = { createSubmission };
+const getAnalysis = async (req, res) => {
+  try {
+    const cachePath = path.join(CACHE_DIR, `analysis-${req.user.userId}.json`);
+
+    if (!fs.existsSync(cachePath)) {
+      return res.json({
+        success: true,
+        analysis: [],
+      });
+    }
+
+    const { analysis } = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+
+    res.json({
+      success: true,
+      analysis: Array.isArray(analysis) ? analysis : [],
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+    });
+  }
+};
+
+module.exports = { createSubmission, getAnalysis };
