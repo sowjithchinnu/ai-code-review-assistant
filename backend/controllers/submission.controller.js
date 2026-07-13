@@ -6,6 +6,8 @@ const {
   analyzePython,
 } = require("../services/static-analysis.service");
 
+const { generateAIReview } = require("../services/ai-review.service");
+
 const CACHE_DIR = path.join(__dirname, "../cache");
 
 function saveAnalysisCache(userId, analysis) {
@@ -67,6 +69,7 @@ const createSubmission = async (req, res) => {
       success: true,
       submission: result.rows[0],
       analysis,
+      aiReview: await aiReview(code, language, analysis),
     });
   } catch (error) {
     console.error(error);
@@ -103,4 +106,8 @@ const getAnalysis = async (req, res) => {
   }
 };
 
-module.exports = { createSubmission, getAnalysis };
+const aiReview = async (code, language, analysis) => {
+  return await generateAIReview(code, language, analysis);
+};
+
+module.exports = { createSubmission, getAnalysis, aiReview };
