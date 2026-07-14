@@ -27,6 +27,9 @@ function buildPrompt(code, language, analysis) {
 
   return `Review the following ${language} code. Static analysis results are included for context.
 
+Review the code for security vulnerabilities, including SQL Injection, Command Injection, Cross-Site Scripting (XSS), authentication and authorization issues, input validation flaws, secret/API key exposure, unsafe file operations, hardcoded credentials, and OWASP best practices.
+Assign severity values for each issue using these impact levels: Critical for hardcoded secrets or API keys, SQL Injection, or authentication bypass; High for eval(), new Function, command execution, or XSS; Medium for missing input validation or authorization checks; Low for style issues such as console.log or unused variables.
+
 Static analysis results:
 ${analysisText}
 
@@ -40,7 +43,7 @@ Respond with JSON only using this exact shape:
   "summary": "brief overall review",
   "issues": [
     {
-      "severity": "error | warning | info",
+      "severity": "Low | Medium | High | Critical",
       "line": 1,
       "message": "description of the issue",
       "rule": "optional rule or category"

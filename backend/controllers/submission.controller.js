@@ -6,20 +6,49 @@ const {
   analyzePython,
 } = require("../services/static-analysis.service");
 
+const {
+  analyzeComplexity,
+} = require("../services/complexity-analysis.service");
+
 const { generateAIReview } = require("../services/ai-review.service");
 
 const CACHE_DIR = path.join(__dirname, "../cache");
 
-function saveAnalysisCache(userId, analysis) {
+function getStyleIssues(issues) {
+  const styleRules = new Set([
+    "semi",
+    "quotes",
+    "eqeqeq",
+    "curly",
+    "indent",
+    "no-console",
+    "no-var",
+    "prefer-const",
+  ]);
+
+  return Array.isArray(issues)
+    ? issues.filter((issue) => styleRules.has(issue.rule))
+    : [];
+}
+
+function saveAnalysisCache(userId, analysisData) {
   if (!fs.existsSync(CACHE_DIR)) {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
   }
 
-  const issues = Array.isArray(analysis) ? analysis : [];
+  const issues = Array.isArray(analysisData)
+    ? analysisData
+    : Array.isArray(analysisData?.issues)
+    ? analysisData.issues
+    : [];
+  const formattingIssues = Array.isArray(analysisData?.formattingIssues)
+    ? analysisData.formattingIssues
+    : [];
+  const styleIssues = getStyleIssues(issues);
 
   fs.writeFileSync(
     path.join(CACHE_DIR, `analysis-${userId}.json`),
-    JSON.stringify({ analysis: issues })
+    JSON.stringify({ analysis: issues, formattingIssues, styleIssues, duplicateCodeReport: analysisData.duplicateCodeReport || { duplicatePercentage: 0, duplicatedBlocks: 0, duplicatedLines: 0 } })
   );
 }
 
@@ -53,24 +82,68 @@ const createSubmission = async (req, res) => {
 
     let analysis = [];
 
+    let formattingIssues = [];
+
     if (req.file) {
       const normalizedLanguage = language.trim().toLowerCase();
+      let analysisResult = { issues: [], formattingIssues: [] };
 
       if (normalizedLanguage === "javascript" || normalizedLanguage === "js") {
-        analysis = await analyzeJavaScript(req.file.path);
+        analysisResult = await analyzeJavaScript(req.file.path);
       } else if (normalizedLanguage === "python" || normalizedLanguage === "py") {
-        analysis = await analyzePython(req.file.path);
+        analysisResult = await analyzePython(req.file.path);
       }
 
-      saveAnalysisCache(req.user.userId, analysis);
+      analysis = Array.isArray(analysisResult.issues)
+        ? analysisResult.issues
+        : [];
+      formattingIssues = Array.isArray(analysisResult.formattingIssues)
+        ? analysisResult.formattingIssues
+        : [];
+    }
+
+    const aiReview = await generateAIReview(code, language, analysis);
+
+    const complexityReport = req.file
+      ? await analyzeComplexity(req.file.path)
+      : null;
+
+    const duplicateCodeReport = complexityReport
+      ? {
+          duplicatePercentage: complexityReport.duplicatePercentage ?? 0,
+          duplicatedBlocks: complexityReport.duplicatedBlocks ?? 0,
+          duplicatedLines: complexityReport.duplicatedLines ?? 0,
+        }
+      : {
+          duplicatePercentage: 0,
+          duplicatedBlocks: 0,
+          duplicatedLines: 0,
+        };
+
+    const styleReport = getStyleIssues(analysis);
+
+    if (req.file) {
+      const analysisResult = {
+        issues: analysis,
+        formattingIssues,
+        styleIssues: styleReport,
+        duplicateCodeReport,
+      };
+
+      saveAnalysisCache(req.user.userId, analysisResult);
     }
 
     res.status(201).json({
       success: true,
       submission: result.rows[0],
       analysis,
-      aiReview: await aiReview(code, language, analysis),
+      aiReview,
+      complexityReport,
+      duplicateCodeReport,
+      formattingReport: formattingIssues,
+      styleReport,
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -91,11 +164,20 @@ const getAnalysis = async (req, res) => {
       });
     }
 
-    const { analysis } = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    const data = JSON.parse(fs.readFileSync(cachePath, "utf8"));
 
     res.json({
       success: true,
-      analysis: Array.isArray(analysis) ? analysis : [],
+      analysis: Array.isArray(data.analysis) ? data.analysis : [],
+      formattingReport: Array.isArray(data.formattingIssues)
+        ? data.formattingIssues
+        : [],
+      styleReport: Array.isArray(data.styleIssues) ? data.styleIssues : [],
+      duplicateCodeReport: data.duplicateCodeReport || {
+        duplicatePercentage: 0,
+        duplicatedBlocks: 0,
+        duplicatedLines: 0,
+      },
     });
   } catch (error) {
     console.error(error);
@@ -106,8 +188,4 @@ const getAnalysis = async (req, res) => {
   }
 };
 
-const aiReview = async (code, language, analysis) => {
-  return await generateAIReview(code, language, analysis);
-};
-
-module.exports = { createSubmission, getAnalysis, aiReview };
+module.exports = { createSubmission, getAnalysis };
