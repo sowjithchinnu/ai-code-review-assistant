@@ -10,6 +10,10 @@ const {
   analyzeComplexity,
 } = require("../services/complexity-analysis.service");
 
+const {
+  generateDocumentation,
+} = require("../services/documentation.service");
+
 const { generateAIReview } = require("../services/ai-review.service");
 
 const CACHE_DIR = path.join(__dirname, "../cache");
@@ -103,6 +107,7 @@ const createSubmission = async (req, res) => {
     }
 
     const aiReview = await generateAIReview(code, language, analysis);
+    const documentation = await generateDocumentation(code, language);
 
     const complexityReport = req.file
       ? await analyzeComplexity(req.file.path)
@@ -142,6 +147,7 @@ const createSubmission = async (req, res) => {
       duplicateCodeReport,
       formattingReport: formattingIssues,
       styleReport,
+      documentation,
     });
 
   } catch (error) {
