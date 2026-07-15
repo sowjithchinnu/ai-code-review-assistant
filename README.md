@@ -50,3 +50,12 @@ An AI-powered full-stack application that analyzes source code using static anal
 - Function documentation
 - Class documentation
 - API endpoint documentation
+
+## 🛠️ Recent Improvements
+
+- Added AI-powered code documentation generation.
+- Implemented review history with search, filtering, sorting, and pagination.
+- Enhanced static analysis with duplicate code detection, formatting checks, and style validation.
+- Added complexity metrics including cyclomatic complexity, function complexity, and file statistics.
+- Strengthened backend reliability with comprehensive testing, validation, centralized error handling, rate limiting, and security enhancements.
+- Improved API consistency and overall project stability for a production-ready experience.
