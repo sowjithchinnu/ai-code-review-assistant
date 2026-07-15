@@ -1,4 +1,5 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const pool = require("../config/db");
 const {
@@ -194,4 +195,128 @@ const getAnalysis = async (req, res) => {
   }
 };
 
-module.exports = { createSubmission, getAnalysis };
+const getSubmissions = async (req, res) => {
+  try {
+    const { search = "", language = "", date = "", page = "1", limit = "10" } = req.query;
+
+    const parsedPage = Math.max(1, Number.parseInt(String(page), 10) || 1);
+    const parsedLimit = Math.min(25, Math.max(1, Number.parseInt(String(limit), 10) || 10));
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const clauses = [];
+    const values = [req.user.userId];
+    const countValues = [req.user.userId];
+    let index = 2;
+
+    if (search) {
+      const searchValue = `%${String(search).toLowerCase()}%`;
+      clauses.push(`(LOWER(title) LIKE $${index} OR LOWER(language) LIKE $${index})`);
+      values.push(searchValue);
+      countValues.push(searchValue);
+      index += 1;
+    }
+
+    if (language) {
+      const languageValue = String(language).toLowerCase();
+      clauses.push(`LOWER(language) = $${index}`);
+      values.push(languageValue);
+      countValues.push(languageValue);
+      index += 1;
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+      const dateValue = String(date);
+      clauses.push(`DATE(created_at) = $${index}`);
+      values.push(dateValue);
+      countValues.push(dateValue);
+      index += 1;
+    }
+
+    const whereClause = clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "";
+    const sortDirection = date === "oldest" ? "ASC" : "DESC";
+
+    const query = `SELECT id, title, language, code, created_at FROM submissions WHERE user_id = $1${whereClause} ORDER BY created_at ${sortDirection} LIMIT $${index} OFFSET $${index + 1}`;
+    const countQuery = `SELECT COUNT(*)::int AS total FROM submissions WHERE user_id = $1${whereClause}`;
+
+    values.push(parsedLimit, offset);
+
+    const [result, countResult] = await Promise.all([
+      pool.query(query, values),
+      pool.query(countQuery, countValues),
+    ]);
+
+    const submissions = await Promise.all(
+      result.rows.map(async (row) => {
+        let aiReviewSummary = "";
+        let complexity = "Unavailable";
+
+        if (row.code) {
+          const reviewResult = await generateAIReview(row.code, row.language, []);
+          if (reviewResult?.success) {
+            aiReviewSummary = reviewResult.summary || "";
+          } else {
+            aiReviewSummary = reviewResult?.message || "AI review unavailable";
+          }
+
+          const extension = String(row.language || "js")
+            .trim()
+            .toLowerCase()
+            .includes("python")
+            ? "py"
+            : "js";
+          const tempFilePath = path.join(
+            os.tmpdir(),
+            `submission-${row.id}-${Date.now()}.${extension}`
+          );
+
+          try {
+            fs.writeFileSync(tempFilePath, row.code, "utf8");
+            const complexityReport = await analyzeComplexity(tempFilePath);
+            if (complexityReport?.success) {
+              complexity = complexityReport.complexity || "Unknown";
+            }
+          } catch (error) {
+            console.error(error);
+          } finally {
+            if (fs.existsSync(tempFilePath)) {
+              fs.unlinkSync(tempFilePath);
+            }
+          }
+        }
+
+        return {
+          id: row.id,
+          title: row.title,
+          language: row.language,
+          created_at: row.created_at,
+          aiReviewSummary,
+          complexity,
+        };
+      })
+    );
+
+    const totalCount = Number(countResult.rows[0]?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(totalCount / parsedLimit));
+
+    res.json({
+      success: true,
+      submissions,
+      pagination: {
+        page: parsedPage,
+        limit: parsedLimit,
+        totalCount,
+        totalPages,
+        hasNextPage: parsedPage < totalPages,
+        hasPrevPage: parsedPage > 1,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+    });
+  }
+};
+
+module.exports = { createSubmission, getAnalysis, getSubmissions };
