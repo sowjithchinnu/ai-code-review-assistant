@@ -312,7 +312,6 @@ async function detectFormattingIssues(filePath, code) {
 
     return [buildFormattingIssue()];
   } catch (error) {
-    console.error("Prettier formatting check failed:", error);
     return [];
   }
 }
@@ -331,7 +330,6 @@ async function runCommand(command) {
 
 async function analyzeJavaScript(filePath) {
   const resolvedPath = path.resolve(filePath);
-  console.log("Running ESLint:", resolvedPath);
   const command = `npx eslint --no-ignore ${JSON.stringify(resolvedPath)} -f json`;
 
   try {
@@ -343,7 +341,7 @@ async function analyzeJavaScript(filePath) {
     try {
       code = fs.readFileSync(filePath, "utf8");
     } catch (readError) {
-      console.error("Unable to read JavaScript file for import analysis:", readError);
+      // Skip import analysis if the file cannot be read.
     }
 
     const importIssues = detectMissingImports(filePath, code);
@@ -355,7 +353,6 @@ async function analyzeJavaScript(filePath) {
       formattingIssues,
     };
   } catch (error) {
-    console.error("ESLint analysis failed:", error);
     return {
       issues: [],
       formattingIssues: [],
@@ -364,7 +361,6 @@ async function analyzeJavaScript(filePath) {
 }
 
 async function analyzePython(filePath) {
-  console.log("Running Pylint:", filePath);
 
   const command = `pylint ${JSON.stringify(filePath)} --output-format=json`;
 

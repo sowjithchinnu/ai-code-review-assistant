@@ -10,7 +10,6 @@ import {
   FileText,
   Settings,
   LogOut,
-  Menu,
   X,
   ChevronLeft,
   ChevronRight,
@@ -24,7 +23,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Separator } from "@/components/ui/separator";
 
 const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed";
 
@@ -88,8 +86,10 @@ export function Sidebar({ isOpen, onClose, onCollapsedChange }: SidebarProps) {
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
+    // Intentional hydration from localStorage on mount: safe for initialization.
     const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
     if (stored !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsCollapsed(stored === "true");
     }
     setIsHydrated(true);

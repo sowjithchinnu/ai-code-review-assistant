@@ -20,7 +20,7 @@ interface TopNavbarProps {
   sidebarOpen: boolean;
 }
 
-export function TopNavbar({ title, onMenuClick, sidebarOpen }: TopNavbarProps) {
+export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [notificationCount] = useState(3);
 
@@ -104,7 +104,7 @@ export function TopNavbar({ title, onMenuClick, sidebarOpen }: TopNavbarProps) {
                 <span className="text-xs text-muted-foreground">2m ago</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Code review for "auth-service" is ready
+                Code review for &quot;auth-service&quot; is ready
               </p>
             </DropdownMenuItem>
             <DropdownMenuItem className="flex flex-col items-start gap-1">

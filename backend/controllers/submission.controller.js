@@ -57,7 +57,7 @@ function saveAnalysisCache(userId, analysisData) {
   );
 }
 
-const createSubmission = async (req, res) => {
+const createSubmission = async (req, res, next) => {
   try {
     const { title, language, code: bodyCode } = req.body;
 
@@ -152,15 +152,11 @@ const createSubmission = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-    });
+    next(error);
   }
 };
 
-const getAnalysis = async (req, res) => {
+const getAnalysis = async (req, res, next) => {
   try {
     const cachePath = path.join(CACHE_DIR, `analysis-${req.user.userId}.json`);
 
@@ -187,15 +183,11 @@ const getAnalysis = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-    });
+    next(error);
   }
 };
 
-const getSubmissions = async (req, res) => {
+const getSubmissions = async (req, res, next) => {
   try {
     const { search = "", language = "", date = "", page = "1", limit = "10" } = req.query;
 
@@ -276,7 +268,7 @@ const getSubmissions = async (req, res) => {
               complexity = complexityReport.complexity || "Unknown";
             }
           } catch (error) {
-            console.error(error);
+            // Complexity analysis failures should not break the history response
           } finally {
             if (fs.existsSync(tempFilePath)) {
               fs.unlinkSync(tempFilePath);
@@ -311,11 +303,7 @@ const getSubmissions = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-    });
+    next(error);
   }
 };
 
