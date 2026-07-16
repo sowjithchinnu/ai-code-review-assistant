@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarDays, FileText, Search } from "lucide-react";
+import { BookOpen, CalendarDays, FileText, Search, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CodeBlock, EmptyState, MetricsSkeleton, PageTransition, TableSkeleton } from "@/components/ui/dashboard-visuals";
 import {
   fetchSubmissionHistory,
+  deleteSubmission,
   type SubmissionHistoryItem,
 } from "@/lib/api";
+import { useToast } from "@/components/ui/toast-provider";
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString(undefined, {
@@ -26,6 +29,7 @@ function formatDate(value: string) {
 }
 
 export default function ReviewsPage() {
+  const { toast } = useToast();
   const [submissions, setSubmissions] = useState<SubmissionHistoryItem[]>([]);
   const [search, setSearch] = useState("");
   const [language, setLanguage] = useState("all");
@@ -43,6 +47,8 @@ export default function ReviewsPage() {
     useState<SubmissionHistoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"summary" | "findings" | "docs">("summary");
+  const [isDeletingId, setIsDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -96,17 +102,100 @@ export default function ReviewsPage() {
     };
   }, [search, language, dateOrder, page]);
 
+  const handleDeleteSubmission = async (submission: SubmissionHistoryItem, event: React.MouseEvent) => {
+    event.stopPropagation();
+
+    const confirmed = window.confirm(
+      `Delete "${submission.title}"? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsDeletingId(submission.id);
+      await deleteSubmission(submission.id);
+
+      toast({
+        title: "Submission deleted",
+        description: `"${submission.title}" has been successfully deleted.`,
+        variant: "success",
+      });
+
+      setSubmissions((prev) => prev.filter((item) => item.id !== submission.id));
+      if (selectedSubmission?.id === submission.id) {
+        setSelectedSubmission(null);
+      }
+
+      if (submissions.length <= 1 && page > 1) {
+        setPage(page - 1);
+      }
+    } catch (err) {
+      toast({
+        title: "Failed to delete",
+        description: err instanceof Error ? err.message : "Failed to delete submission",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingId(null);
+    }
+  };
+
+  const complexityScore = (() => {
+    switch (selectedSubmission?.complexity?.toLowerCase()) {
+      case "high":
+        return { value: "82/100", badge: "High risk" };
+      case "medium":
+        return { value: "64/100", badge: "Balanced" };
+      default:
+        return { value: "48/100", badge: "Low risk" };
+    }
+  })();
+
+  const documentation = [
+    {
+      title: "Architecture notes",
+      description: "A compact guide for the reviewed service and its responsibilities.",
+    },
+    {
+      title: "Review checklist",
+      description: "Best practices to validate before merging or shipping the change.",
+    },
+    {
+      title: "Known edge cases",
+      description: "Notes on stability, concurrency, and error-handling scenarios.",
+    },
+  ];
+
+  const codeSample = `export async function reviewSubmission(data) {
+  const summary = await analyze(data);
+  return {
+    score: summary.score,
+    findings: summary.findings,
+  };
+}`;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Review History</h2>
-        <p className="text-muted-foreground">
-          Search past submissions and open the full review details for any item.
-        </p>
+    <PageTransition className="space-y-6">
+      <div className="rounded-[28px] border border-border/70 bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-background/70 px-3 py-1 text-sm text-primary">
+              <Sparkles className="h-4 w-4" />
+              AI review workspace
+            </div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Review History</h2>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
+              Explore your latest submissions, inspect the AI findings, and review the supporting documentation in one place.
+            </p>
+          </div>
+          <Badge variant="secondary" className="w-fit rounded-full">
+            Always up to date
+          </Badge>
+        </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <div className="space-y-4 rounded-lg border border-border bg-card p-4 shadow-sm">
+      <div className="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
+        <div className="space-y-4 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm backdrop-blur sm:p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -151,18 +240,23 @@ export default function ReviewsPage() {
           </div>
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading submissions...</p>
+            <div className="space-y-3">
+              <MetricsSkeleton />
+              <TableSkeleton rows={6} />
+            </div>
           ) : error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
               {error}
             </div>
           ) : submissions.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">
-              No submissions match the current filters.
-            </div>
+            <EmptyState
+              icon={Search}
+              title="No submissions found"
+              description="Try a different search or reset the filters to bring back your review history."
+            />
           ) : (
             <div className="space-y-3">
-              <div className="overflow-hidden rounded-md border border-border">
+              <div className="overflow-hidden rounded-2xl border border-border/60">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -170,13 +264,14 @@ export default function ReviewsPage() {
                       <TableHead>Language</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Complexity</TableHead>
+                      <TableHead className="w-10"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {submissions.map((submission) => (
                       <TableRow
                         key={submission.id}
-                        className="cursor-pointer hover:bg-muted/40"
+                        className="cursor-pointer transition-colors hover:bg-muted/50"
                         onClick={() => setSelectedSubmission(submission)}
                       >
                         <TableCell className="font-medium">{submission.title}</TableCell>
@@ -184,6 +279,17 @@ export default function ReviewsPage() {
                         <TableCell>{formatDate(submission.created_at)}</TableCell>
                         <TableCell>
                           <Badge variant="secondary">{submission.complexity}</Badge>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => handleDeleteSubmission(submission, e)}
+                            disabled={isDeletingId === submission.id}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -220,48 +326,96 @@ export default function ReviewsPage() {
           )}
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm backdrop-blur sm:p-6">
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-muted-foreground" />
-            <h3 className="font-semibold">Review details</h3>
+            <h3 className="font-semibold">AI review panel</h3>
           </div>
 
           {!selectedSubmission ? (
-            <div className="mt-4 rounded-md border border-dashed border-border bg-muted/30 p-6 text-sm text-muted-foreground">
-              Select a row to view the submission summary and complexity.
-            </div>
+            <EmptyState
+              icon={FileText}
+              title="Choose a submission"
+              description="Select a row to open the AI summary, highlights, and the linked documentation."
+            />
           ) : (
             <div className="mt-4 space-y-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Title</p>
-                <p className="font-medium">{selectedSubmission.title}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
+                  <p className="text-sm text-muted-foreground">Complexity</p>
+                  <p className="mt-1 font-semibold">{selectedSubmission.complexity}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
+                  <p className="text-sm text-muted-foreground">Score</p>
+                  <p className="mt-1 font-semibold">{complexityScore.value}</p>
+                  <p className="text-xs text-muted-foreground">{complexityScore.badge}</p>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CalendarDays className="h-4 w-4" />
-                <span>{formatDate(selectedSubmission.created_at)}</span>
+              <div className="flex flex-wrap gap-2 rounded-full border border-border/70 bg-background/70 p-1">
+                {[
+                  { id: "summary", label: "Summary" },
+                  { id: "findings", label: "Findings" },
+                  { id: "docs", label: "Docs" },
+                ].map((tab) => (
+                  <Button
+                    key={tab.id}
+                    variant={activeTab === tab.id ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                  >
+                    {tab.label}
+                  </Button>
+                ))}
               </div>
 
-              <div>
-                <p className="text-sm text-muted-foreground">Language</p>
-                <p>{selectedSubmission.language}</p>
-              </div>
+              {activeTab === "summary" && (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <CalendarDays className="h-4 w-4" />
+                      Review summary
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">
+                      {selectedSubmission.aiReviewSummary || "No AI summary available."}
+                    </p>
+                  </div>
+                  <CodeBlock code={codeSample} language="typescript" title="review.ts" />
+                </div>
+              )}
 
-              <div>
-                <p className="text-sm text-muted-foreground">Complexity</p>
-                <Badge variant="secondary">{selectedSubmission.complexity}</Badge>
-              </div>
+              {activeTab === "findings" && (
+                <div className="space-y-3">
+                  {[
+                    "Validate the new error-handling branch for edge cases.",
+                    "Confirm the function stays readable under current complexity limits.",
+                    "Check the API contract before widening the public interface.",
+                  ].map((item, index) => (
+                    <div key={`${item}-${index}`} className="rounded-2xl border border-border/60 bg-background/70 p-3 text-sm text-muted-foreground">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              <div>
-                <p className="text-sm text-muted-foreground">AI review summary</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">
-                  {selectedSubmission.aiReviewSummary || "No AI summary available."}
-                </p>
-              </div>
+              {activeTab === "docs" && (
+                <div className="space-y-3">
+                  {documentation.map((item, index) => (
+                    <div key={`${item.title}-${index}`} className="rounded-2xl border border-border/60 bg-background/70 p-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                        <BookOpen className="h-4 w-4" />
+                        Documentation
+                      </div>
+                      <h4 className="mt-2 font-semibold">{item.title}</h4>
+                      <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
-    </div>
+    </PageTransition>
   );
 }

@@ -94,4 +94,105 @@ const getCurrentUser = async (req, res, next) => {
   }
 };
 
-module.exports = { signup, login, getCurrentUser };
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    const user = await pool.query("SELECT id, name FROM users WHERE email = $1", [email]);
+
+    if (user.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const resetToken = jwt.sign(
+      { userId: user.rows[0].id, email },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    await pool.query(
+      "UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3",
+      [resetToken, expiresAt, user.rows[0].id]
+    );
+
+    const isDevelopment = process.env.NODE_ENV !== "production";
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset link sent to your email",
+      ...(isDevelopment && { resetToken }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Token and new password are required",
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired reset token",
+      });
+    }
+
+    const user = await pool.query(
+      "SELECT id, reset_token, reset_token_expires FROM users WHERE id = $1",
+      [decoded.userId]
+    );
+
+    if (user.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.rows[0].reset_token !== token) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid reset token",
+      });
+    }
+
+    if (new Date() > new Date(user.rows[0].reset_token_expires)) {
+      return res.status(401).json({
+        success: false,
+        message: "Reset token has expired",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await pool.query(
+      "UPDATE users SET password = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2",
+      [hashedPassword, decoded.userId]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Password has been reset successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { signup, login, getCurrentUser, forgotPassword, resetPassword };

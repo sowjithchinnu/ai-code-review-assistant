@@ -8,6 +8,7 @@ const {
   createSubmission,
   getAnalysis,
   getSubmissions,
+  deleteSubmission,
 } = require("../controllers/submission.controller");
 const { asyncHandler } = require("../middleware/error.middleware");
 
@@ -42,5 +43,6 @@ router.get(
   asyncHandler(getSubmissions)
 );
 router.get("/analysis", authMiddleware, asyncHandler(getAnalysis));
+router.delete("/:id", authMiddleware, asyncHandler(deleteSubmission));
 
 module.exports = router;

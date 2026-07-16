@@ -19,6 +19,21 @@ const { generateAIReview } = require("../services/ai-review.service");
 
 const CACHE_DIR = path.join(__dirname, "../cache");
 
+function removeAnalysisCache(userId) {
+  if (!fs.existsSync(CACHE_DIR)) {
+    return;
+  }
+
+  const cachePath = path.join(CACHE_DIR, `analysis-${userId}.json`);
+  if (fs.existsSync(cachePath)) {
+    try {
+      fs.unlinkSync(cachePath);
+    } catch (error) {
+      console.error(`Failed to remove cache for user ${userId}:`, error.message);
+    }
+  }
+}
+
 function getStyleIssues(issues) {
   const styleRules = new Set([
     "semi",
@@ -127,6 +142,9 @@ const createSubmission = async (req, res, next) => {
         };
 
     const styleReport = getStyleIssues(analysis);
+    const reviewSummary = typeof aiReview?.summary === "string" ? aiReview.summary : "";
+    const complexityValue = complexityReport?.cyclomaticComplexity ?? null;
+    const issueCount = Array.isArray(analysis) ? analysis.length : 0;
 
     if (req.file) {
       const analysisResult = {
@@ -138,6 +156,16 @@ const createSubmission = async (req, res, next) => {
 
       saveAnalysisCache(req.user.userId, analysisResult);
     }
+
+    await pool.query(
+      `UPDATE submissions
+       SET ai_review_summary = $1,
+           cyclomatic_complexity = $2,
+           issues_found = $3,
+           ai_review_created_at = NOW()
+       WHERE id = $4`,
+      [reviewSummary, complexityValue, issueCount, result.rows[0].id]
+    );
 
     res.status(201).json({
       success: true,
@@ -307,4 +335,58 @@ const getSubmissions = async (req, res, next) => {
   }
 };
 
-module.exports = { createSubmission, getAnalysis, getSubmissions };
+const deleteSubmissionRecord = async ({ pool, userId, submissionId, removeCache }) => {
+  const result = await pool.query(
+    `DELETE FROM submissions WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [submissionId, userId]
+  );
+
+  if (result.rowCount === 0) {
+    return {
+      success: false,
+      deleted: false,
+      message: "Submission not found or does not belong to the current user",
+    };
+  }
+
+  const remainingResult = await pool.query(
+    `SELECT id FROM submissions WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+
+  if (remainingResult.rowCount === 0) {
+    removeCache(userId);
+  }
+
+  return {
+    success: true,
+    deleted: true,
+    message: "Submission deleted successfully",
+  };
+};
+
+const deleteSubmission = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Submission ID is required",
+      });
+    }
+
+    const result = await deleteSubmissionRecord({
+      pool,
+      userId: req.user.userId,
+      submissionId: parseInt(id, 10),
+      removeCache: removeAnalysisCache,
+    });
+
+    return res.status(result.deleted ? 200 : 404).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { createSubmission, getAnalysis, getSubmissions, deleteSubmission, deleteSubmissionRecord };

@@ -3,7 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require("express-validator");
 const authMiddleware = require("../middleware/auth.middleware");
 
-const { signup, login, getCurrentUser } = require("../controllers/auth.controller");
+const { signup, login, getCurrentUser, forgotPassword, resetPassword } = require("../controllers/auth.controller");
 const { asyncHandler } = require("../middleware/error.middleware");
 
 const validate = (req, res, next) => {
@@ -32,6 +32,19 @@ router.post(
   body("password").notEmpty().withMessage("Password is required"),
   validate,
   asyncHandler(login)
+);
+router.post(
+  "/forgot-password",
+  body("email").isEmail().withMessage("Valid email is required"),
+  validate,
+  asyncHandler(forgotPassword)
+);
+router.post(
+  "/reset-password",
+  body("token").notEmpty().withMessage("Reset token is required"),
+  body("newPassword").isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
+  validate,
+  asyncHandler(resetPassword)
 );
 router.get("/me", authMiddleware, asyncHandler(getCurrentUser));
 

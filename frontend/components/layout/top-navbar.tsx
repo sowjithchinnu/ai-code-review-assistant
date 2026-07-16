@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,8 +11,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Menu, Bell, Search, Settings, LogOut, User } from "lucide-react";
+import { Menu, Bell, Search, Settings, LogOut, User, MoonStar, SunMedium } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast-provider";
 
 interface TopNavbarProps {
   title: string;
@@ -23,6 +24,38 @@ interface TopNavbarProps {
 export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [notificationCount] = useState(3);
+  const { toast } = useToast();
+  const [mounted, setMounted] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") {
+      return "light";
+    }
+
+    const storedTheme = window.localStorage.getItem("theme") as "light" | "dark" | null;
+    if (storedTheme) {
+      return storedTheme;
+    }
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    window.localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((current) => {
+      const nextTheme = current === "dark" ? "light" : "dark";
+      toast({ title: "Theme updated", description: `Switched to ${nextTheme} mode.`, variant: "success" });
+      return nextTheme;
+    });
+  };
 
   const getInitials = (name: string) => {
     return name
@@ -78,6 +111,23 @@ export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
 
       {/* Right Side Actions */}
       <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleTheme}
+          className="shrink-0"
+          aria-label="Toggle theme"
+          suppressHydrationWarning
+        >
+          {!mounted ? (
+            <span className="h-5 w-5" />
+          ) : theme === "dark" ? (
+            <SunMedium className="h-5 w-5" />
+          ) : (
+            <MoonStar className="h-5 w-5" />
+          )}
+        </Button>
+
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
