@@ -12,10 +12,8 @@ interface DashboardLayoutProps {
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/projects": "Projects",
   "/reviews": "Reviews",
   "/analysis": "Analysis",
-  "/settings": "Settings",
 };
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {

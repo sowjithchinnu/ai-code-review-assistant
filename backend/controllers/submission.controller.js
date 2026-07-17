@@ -146,16 +146,15 @@ const createSubmission = async (req, res, next) => {
     const complexityValue = complexityReport?.cyclomaticComplexity ?? null;
     const issueCount = Array.isArray(analysis) ? analysis.length : 0;
 
-    if (req.file) {
-      const analysisResult = {
-        issues: analysis,
-        formattingIssues,
-        styleIssues: styleReport,
-        duplicateCodeReport,
-      };
+    // Save analysis cache for both file uploads and pasted code
+    const analysisResult = {
+      issues: analysis,
+      formattingIssues,
+      styleIssues: styleReport,
+      duplicateCodeReport,
+    };
 
-      saveAnalysisCache(req.user.userId, analysisResult);
-    }
+    saveAnalysisCache(req.user.userId, analysisResult);
 
     await pool.query(
       `UPDATE submissions

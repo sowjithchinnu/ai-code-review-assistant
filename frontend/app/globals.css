@@ -125,6 +125,7 @@
   html {
     @apply font-sans;
     color-scheme: light;
+    font-size: 17px;
   }
 
   html.dark {
@@ -139,5 +140,9 @@
 
   ::selection {
     @apply bg-primary/25 text-foreground;
+  }
+
+  aside {
+    font-size: 1.05rem;
   }
 }

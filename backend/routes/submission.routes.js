@@ -38,7 +38,13 @@ router.get(
   authMiddleware,
   query("page").optional().isInt({ min: 1 }).withMessage("Page must be a positive integer"),
   query("limit").optional().isInt({ min: 1, max: 25 }).withMessage("Limit must be between 1 and 25"),
-  query("date").optional().matches(/^\d{4}-\d{2}-\d{2}$/).withMessage("Date must be in YYYY-MM-DD format"),
+  query("date").optional().custom((value) => {
+    // Allow either YYYY-MM-DD format or 'oldest' sort order, but not other values
+    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value) && value !== "oldest" && value !== "newest") {
+      throw new Error("Date must be in YYYY-MM-DD format or 'oldest'/'newest' for sort order");
+    }
+    return true;
+  }).withMessage("Invalid date format"),
   validate,
   asyncHandler(getSubmissions)
 );

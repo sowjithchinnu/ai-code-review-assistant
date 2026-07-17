@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,8 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Menu, Bell, Search, Settings, LogOut, User, MoonStar, SunMedium } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Menu, LogOut, MoonStar, SunMedium } from "lucide-react";
 import { useToast } from "@/components/ui/toast-provider";
 
 interface TopNavbarProps {
@@ -21,9 +21,15 @@ interface TopNavbarProps {
   sidebarOpen: boolean;
 }
 
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
 export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [notificationCount] = useState(3);
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -42,6 +48,16 @@ export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
+    
+    // Load user from localStorage
+    const userStr = typeof window !== "undefined" ? window.localStorage.getItem("user") : null;
+    if (userStr) {
+      try {
+        setUser(JSON.parse(userStr));
+      } catch (e) {
+        console.error("Failed to parse user from localStorage:", e);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -55,6 +71,17 @@ export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
       toast({ title: "Theme updated", description: `Switched to ${nextTheme} mode.`, variant: "success" });
       return nextTheme;
     });
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    toast({
+      title: "Logged out",
+      description: "You have been successfully logged out.",
+      variant: "success",
+    });
+    router.push("/login");
   };
 
   const getInitials = (name: string) => {
@@ -95,20 +122,6 @@ export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
         <h1 className="truncate text-lg font-semibold sm:text-xl">{title}</h1>
       </div>
 
-      {/* Search Bar */}
-      <div className="hidden min-w-0 flex-1 items-center md:flex md:max-w-md">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search reviews, projects..."
-            className="w-full pl-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
       {/* Right Side Actions */}
       <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
         <Button
@@ -128,60 +141,6 @@ export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
           )}
         </Button>
 
-        {/* Notifications */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative"
-              aria-label="Notifications"
-            >
-              <Bell className="h-5 w-5" />
-              {notificationCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs font-bold text-destructive-foreground">
-                  {notificationCount}
-                </span>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[min(20rem,calc(100vw-2rem))]">
-            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="flex flex-col items-start gap-1">
-              <div className="flex w-full items-center justify-between">
-                <span className="font-medium">Review Complete</span>
-                <span className="text-xs text-muted-foreground">2m ago</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Code review for &quot;auth-service&quot; is ready
-              </p>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="flex flex-col items-start gap-1">
-              <div className="flex w-full items-center justify-between">
-                <span className="font-medium">New Analysis</span>
-                <span className="text-xs text-muted-foreground">1h ago</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Security analysis completed for payment module
-              </p>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="flex flex-col items-start gap-1">
-              <div className="flex w-full items-center justify-between">
-                <span className="font-medium">Team Update</span>
-                <span className="text-xs text-muted-foreground">3h ago</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                New team member added to your workspace
-              </p>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="justify-center text-sm font-medium">
-              View All Notifications
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -192,7 +151,7 @@ export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
             >
               <Avatar className="h-9 w-9">
                 <AvatarFallback className="bg-primary text-primary-foreground">
-                  {getInitials("John Doe")}
+                  {getInitials(user?.name ?? "User")}
                 </AvatarFallback>
               </Avatar>
             </Button>
@@ -200,23 +159,14 @@ export function TopNavbar({ title, onMenuClick }: TopNavbarProps) {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">John Doe</p>
+                <p className="text-sm font-medium leading-none">{user?.name ?? "User"}</p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  john.doe@example.com
+                  {user?.email ?? "No email"}
                 </p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <User className="mr-2 h-4 w-4" />
-              <span>Profile</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" />
-              <span>Settings</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem onClick={handleLogout} className="text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>

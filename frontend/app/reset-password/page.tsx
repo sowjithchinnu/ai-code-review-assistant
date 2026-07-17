@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Key, ArrowLeft, Check } from "lucide-react";
 import Link from "next/link";
@@ -9,12 +9,12 @@ import { Input } from "@/components/ui/input";
 import { resetPassword } from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   
-  const [token, setToken] = useState<string | null>(null);
+  const token = searchParams.get("token");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -22,18 +22,15 @@ export default function ResetPasswordPage() {
   const [errors, setErrors] = useState<{ newPassword?: string; confirmPassword?: string }>({});
 
   useEffect(() => {
-    const tokenParam = searchParams.get("token");
-    if (!tokenParam) {
+    if (!token) {
       toast({
         title: "Error",
         description: "No reset token provided. Please use the link from your email.",
         variant: "destructive",
       });
       router.push("/login");
-    } else {
-      setToken(tokenParam);
     }
-  }, [searchParams, router, toast]);
+  }, [token, router, toast]);
 
   const validateForm = () => {
     const newErrors: typeof errors = {};
@@ -186,5 +183,19 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center p-6 bg-card/80 border border-border/70 rounded-2xl shadow-sm backdrop-blur">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }

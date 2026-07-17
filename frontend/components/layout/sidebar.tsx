@@ -4,17 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard,
-  FolderKanban,
-  FileText,
-  Settings,
-  LogOut,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  ScanSearch,
-} from "lucide-react";
+import { LayoutDashboard, FileText, LogOut, X, ChevronLeft, ChevronRight, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./logo";
 import {
@@ -47,12 +37,6 @@ const navItems: NavItem[] = [
     description: "Overview and analytics",
   },
   {
-    title: "Projects",
-    href: "/projects",
-    icon: <FolderKanban className="h-5 w-5" />,
-    description: "Manage your code projects",
-  },
-  {
     title: "Reviews",
     href: "/reviews",
     icon: <FileText className="h-5 w-5" />,
@@ -63,12 +47,6 @@ const navItems: NavItem[] = [
     href: "/analysis",
     icon: <ScanSearch className="h-5 w-5" />,
     description: "Static analysis results",
-  },
-  {
-    title: "Settings",
-    href: "/settings",
-    icon: <Settings className="h-5 w-5" />,
-    description: "Application settings",
   },
 ];
 

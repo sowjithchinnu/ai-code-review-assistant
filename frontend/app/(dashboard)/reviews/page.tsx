@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookOpen, CalendarDays, FileText, Search, Sparkles, Trash2 } from "lucide-react";
+import { Activity, BookOpen, FileText, Search, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CodeBlock, EmptyState, MetricsSkeleton, PageTransition, TableSkeleton } from "@/components/ui/dashboard-visuals";
+import { EmptyState, MetricsSkeleton, PageTransition, TableSkeleton } from "@/components/ui/dashboard-visuals";
 import {
   fetchSubmissionHistory,
   deleteSubmission,
+  fetchAnalysisResults,
   type SubmissionHistoryItem,
+  type AnalysisIssue,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
 
@@ -31,6 +33,7 @@ function formatDate(value: string) {
 export default function ReviewsPage() {
   const { toast } = useToast();
   const [submissions, setSubmissions] = useState<SubmissionHistoryItem[]>([]);
+  const [analysisIssues, setAnalysisIssues] = useState<AnalysisIssue[]>([]);
   const [search, setSearch] = useState("");
   const [language, setLanguage] = useState("all");
   const [dateOrder, setDateOrder] = useState("newest");
@@ -43,11 +46,9 @@ export default function ReviewsPage() {
     hasNextPage: boolean;
     hasPrevPage: boolean;
   } | null>(null);
-  const [selectedSubmission, setSelectedSubmission] =
-    useState<SubmissionHistoryItem | null>(null);
+  const [selectedSubmission, setSelectedSubmission] = useState<SubmissionHistoryItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"summary" | "findings" | "docs">("summary");
   const [isDeletingId, setIsDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -56,25 +57,26 @@ export default function ReviewsPage() {
     async function loadSubmissions() {
       try {
         setIsLoading(true);
-        const result = await fetchSubmissionHistory({
+        const [historyResult, analysisResult] = await Promise.all([fetchSubmissionHistory({
           search: search || undefined,
           language: language === "all" ? undefined : language,
           date: dateOrder,
           page,
           limit: 10,
-        });
+        }), fetchAnalysisResults()]);
 
         if (isMounted) {
-          setSubmissions(result.submissions);
-          setPagination(result.pagination ?? null);
+          setSubmissions(historyResult.submissions);
+          setPagination(historyResult.pagination ?? null);
+          setAnalysisIssues(analysisResult);
           setError(null);
-          if (result.submissions.length > 0) {
+          if (historyResult.submissions.length > 0) {
             setSelectedSubmission((current) => {
-              if (current && result.submissions.some((item) => item.id === current.id)) {
+              if (current && historyResult.submissions.some((item) => item.id === current.id)) {
                 return current;
               }
 
-              return result.submissions[0];
+              return historyResult.submissions[0];
             });
           } else {
             setSelectedSubmission(null);
@@ -85,6 +87,7 @@ export default function ReviewsPage() {
           setError(err instanceof Error ? err.message : "Failed to load history");
           setSubmissions([]);
           setPagination(null);
+          setAnalysisIssues([]);
           setSelectedSubmission(null);
         }
       } finally {
@@ -105,9 +108,7 @@ export default function ReviewsPage() {
   const handleDeleteSubmission = async (submission: SubmissionHistoryItem, event: React.MouseEvent) => {
     event.stopPropagation();
 
-    const confirmed = window.confirm(
-      `Delete "${submission.title}"? This action cannot be undone.`
-    );
+    const confirmed = window.confirm(`Delete "${submission.title}"? This action cannot be undone.`);
 
     if (!confirmed) return;
 
@@ -143,55 +144,20 @@ export default function ReviewsPage() {
   const complexityScore = (() => {
     switch (selectedSubmission?.complexity?.toLowerCase()) {
       case "high":
-        return { value: "82/100", badge: "High risk" };
+        return { value: "82/100", badge: "High risk", className: "border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-400" };
       case "medium":
-        return { value: "64/100", badge: "Balanced" };
+        return { value: "64/100", badge: "Balanced", className: "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400" };
       default:
-        return { value: "48/100", badge: "Low risk" };
+        return { value: "48/100", badge: "Low risk", className: "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" };
     }
   })();
 
-  const documentation = [
-    {
-      title: "Architecture notes",
-      description: "A compact guide for the reviewed service and its responsibilities.",
-    },
-    {
-      title: "Review checklist",
-      description: "Best practices to validate before merging or shipping the change.",
-    },
-    {
-      title: "Known edge cases",
-      description: "Notes on stability, concurrency, and error-handling scenarios.",
-    },
-  ];
-
-  const codeSample = `export async function reviewSubmission(data) {
-  const summary = await analyze(data);
-  return {
-    score: summary.score,
-    findings: summary.findings,
-  };
-}`;
+  const securityIssues = analysisIssues.filter((issue) => /security|auth|token|secret|injection|sanitize|unsafe|cors|xss|sql/i.test(`${issue.rule ?? ""} ${issue.message}`.toLowerCase())).length;
 
   return (
     <PageTransition className="space-y-6">
-      <div className="rounded-[28px] border border-border/70 bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-background/70 px-3 py-1 text-sm text-primary">
-              <Sparkles className="h-4 w-4" />
-              AI review workspace
-            </div>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Review History</h2>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
-              Explore your latest submissions, inspect the AI findings, and review the supporting documentation in one place.
-            </p>
-          </div>
-          <Badge variant="secondary" className="w-fit rounded-full">
-            Always up to date
-          </Badge>
-        </div>
+      <div>
+        <h2 className="text-2xl font-semibold tracking-tight">Review History</h2>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
@@ -245,15 +211,9 @@ export default function ReviewsPage() {
               <TableSkeleton rows={6} />
             </div>
           ) : error ? (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-              {error}
-            </div>
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>
           ) : submissions.length === 0 ? (
-            <EmptyState
-              icon={Search}
-              title="No submissions found"
-              description="Try a different search or reset the filters to bring back your review history."
-            />
+            <EmptyState icon={Search} title="No submissions found" description="Try a different search or reset the filters to bring back your review history." />
           ) : (
             <div className="space-y-3">
               <div className="overflow-hidden rounded-2xl border border-border/60">
@@ -269,25 +229,13 @@ export default function ReviewsPage() {
                   </TableHeader>
                   <TableBody>
                     {submissions.map((submission) => (
-                      <TableRow
-                        key={submission.id}
-                        className="cursor-pointer transition-colors hover:bg-muted/50"
-                        onClick={() => setSelectedSubmission(submission)}
-                      >
+                      <TableRow key={submission.id} className="cursor-pointer transition-colors hover:bg-muted/50" onClick={() => setSelectedSubmission(submission)}>
                         <TableCell className="font-medium">{submission.title}</TableCell>
                         <TableCell>{submission.language}</TableCell>
                         <TableCell>{formatDate(submission.created_at)}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{submission.complexity}</Badge>
-                        </TableCell>
+                        <TableCell><Badge variant="secondary">{submission.complexity}</Badge></TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => handleDeleteSubmission(submission, e)}
-                            disabled={isDeletingId === submission.id}
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                          >
+                          <Button variant="ghost" size="sm" onClick={(e) => handleDeleteSubmission(submission, e)} disabled={isDeletingId === submission.id} className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
@@ -299,26 +247,10 @@ export default function ReviewsPage() {
 
               {pagination && (
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Page {pagination.page} of {pagination.totalPages} • {pagination.totalCount} total submissions
-                  </p>
+                  <p className="text-sm text-muted-foreground">Page {pagination.page} of {pagination.totalPages} • {pagination.totalCount} total submissions</p>
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((current) => Math.max(1, current - 1))}
-                      disabled={!pagination.hasPrevPage}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((current) => current + 1)}
-                      disabled={!pagination.hasNextPage}
-                    >
-                      Next
-                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={!pagination.hasPrevPage}>Previous</Button>
+                    <Button variant="outline" size="sm" onClick={() => setPage((current) => current + 1)} disabled={!pagination.hasNextPage}>Next</Button>
                   </div>
                 </div>
               )}
@@ -329,89 +261,81 @@ export default function ReviewsPage() {
         <div className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm backdrop-blur sm:p-6">
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-muted-foreground" />
-            <h3 className="font-semibold">AI review panel</h3>
+            <h3 className="font-semibold">Review detail</h3>
           </div>
 
           {!selectedSubmission ? (
-            <EmptyState
-              icon={FileText}
-              title="Choose a submission"
-              description="Select a row to open the AI summary, highlights, and the linked documentation."
-            />
+            <EmptyState icon={FileText} title="Choose a submission" description="Select a row to review its backend-backed summary and analysis context." />
           ) : (
-            <div className="mt-4 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
-                  <p className="text-sm text-muted-foreground">Complexity</p>
-                  <p className="mt-1 font-semibold">{selectedSubmission.complexity}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
-                  <p className="text-sm text-muted-foreground">Score</p>
-                  <p className="mt-1 font-semibold">{complexityScore.value}</p>
-                  <p className="text-xs text-muted-foreground">{complexityScore.badge}</p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 rounded-full border border-border/70 bg-background/70 p-1">
-                {[
-                  { id: "summary", label: "Summary" },
-                  { id: "findings", label: "Findings" },
-                  { id: "docs", label: "Docs" },
-                ].map((tab) => (
-                  <Button
-                    key={tab.id}
-                    variant={activeTab === tab.id ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                  >
-                    {tab.label}
-                  </Button>
-                ))}
-              </div>
-
-              {activeTab === "summary" && (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <CalendarDays className="h-4 w-4" />
-                      Review summary
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">
-                      {selectedSubmission.aiReviewSummary || "No AI summary available."}
-                    </p>
+            <div className="mt-4 space-y-3">
+              <section className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Sparkles className="h-4 w-4" />
+                    AI Summary
                   </div>
-                  <CodeBlock code={codeSample} language="typescript" title="review.ts" />
+                  <Badge variant="secondary">{selectedSubmission.language}</Badge>
                 </div>
-              )}
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">{selectedSubmission.aiReviewSummary || "No AI summary available."}</p>
+              </section>
 
-              {activeTab === "findings" && (
-                <div className="space-y-3">
-                  {[
-                    "Validate the new error-handling branch for edge cases.",
-                    "Confirm the function stays readable under current complexity limits.",
-                    "Check the API contract before widening the public interface.",
-                  ].map((item, index) => (
-                    <div key={`${item}-${index}`} className="rounded-2xl border border-border/60 bg-background/70 p-3 text-sm text-muted-foreground">
-                      {item}
-                    </div>
-                  ))}
+              <section className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <ShieldCheck className="h-4 w-4" />
+                    Static Analysis
+                  </div>
+                  <Badge variant="secondary">{analysisIssues.length} findings</Badge>
                 </div>
-              )}
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Issues</p>
+                    <p className="mt-1 text-lg font-semibold">{analysisIssues.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Security</p>
+                    <p className="mt-1 text-lg font-semibold">{securityIssues}</p>
+                  </div>
+                </div>
+              </section>
 
-              {activeTab === "docs" && (
-                <div className="space-y-3">
-                  {documentation.map((item, index) => (
-                    <div key={`${item.title}-${index}`} className="rounded-2xl border border-border/60 bg-background/70 p-3">
-                      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                        <BookOpen className="h-4 w-4" />
-                        Documentation
-                      </div>
-                      <h4 className="mt-2 font-semibold">{item.title}</h4>
-                      <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
-                    </div>
-                  ))}
+              <section className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Activity className="h-4 w-4" />
+                    Complexity Report
+                  </div>
+                  <Badge className={complexityScore.className}>{complexityScore.badge}</Badge>
                 </div>
-              )}
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-2xl font-semibold">{selectedSubmission.complexity}</p>
+                    <p className="text-sm text-muted-foreground">Score {complexityScore.value}</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{selectedSubmission.created_at ? formatDate(selectedSubmission.created_at) : "No timestamp"}</p>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <BookOpen className="h-4 w-4" />
+                  Documentation
+                </div>
+                <div className="mt-3 space-y-2">
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Title</p>
+                    <p className="mt-1 font-medium">{selectedSubmission.title}</p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Language</p>
+                    <p className="mt-1 font-medium">{selectedSubmission.language}</p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Review context</p>
+                    <p className="mt-1 font-medium">Complexity {selectedSubmission.complexity.toLowerCase()} • Generated {formatDate(selectedSubmission.created_at)}</p>
+                  </div>
+                </div>
+              </section>
             </div>
           )}
         </div>

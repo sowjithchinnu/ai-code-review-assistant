@@ -192,6 +192,66 @@ export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
   };
 }
 
+export async function createSubmission(payload: {
+  title: string;
+  language: string;
+  code?: string;
+  file?: File | null;
+}): Promise<{ success: boolean; message?: string }> {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+  if (payload.file) {
+    const formData = new FormData();
+    formData.append("title", payload.title);
+    formData.append("language", payload.language);
+    formData.append("file", payload.file);
+
+    const response = await fetch(`${API_URL}/api/submissions`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message ?? "Failed to create submission");
+    }
+
+    return {
+      success: true,
+      message: data.message,
+    };
+  }
+
+  const response = await fetch(`${API_URL}/api/submissions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      title: payload.title,
+      language: payload.language,
+      code: payload.code ?? "",
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.message ?? "Failed to create submission");
+  }
+
+  return {
+    success: true,
+    message: data.message,
+  };
+}
+
 export async function deleteSubmission(submissionId: number): Promise<{ success: boolean; message?: string }> {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
