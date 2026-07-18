@@ -141,8 +141,9 @@ export default function ReviewsPage() {
     }
   };
 
+  const complexityLabel = (selectedSubmission?.complexity ?? "low").toLowerCase();
   const complexityScore = (() => {
-    switch (selectedSubmission?.complexity?.toLowerCase()) {
+    switch (complexityLabel) {
       case "high":
         return { value: "82/100", badge: "High risk", className: "border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-400" };
       case "medium":
@@ -157,7 +158,7 @@ export default function ReviewsPage() {
   return (
     <PageTransition className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Review History</h2>
+        <h2 className="text-xl font-semibold">Review History</h2>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
@@ -309,7 +310,7 @@ export default function ReviewsPage() {
                 </div>
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-2xl font-semibold">{selectedSubmission.complexity}</p>
+                    <p className="text-xl font-semibold">{selectedSubmission.complexity}</p>
                     <p className="text-sm text-muted-foreground">Score {complexityScore.value}</p>
                   </div>
                   <p className="text-sm text-muted-foreground">{selectedSubmission.created_at ? formatDate(selectedSubmission.created_at) : "No timestamp"}</p>
@@ -332,7 +333,7 @@ export default function ReviewsPage() {
                   </div>
                   <div className="rounded-xl border border-border/60 bg-background/80 p-3">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Review context</p>
-                    <p className="mt-1 font-medium">Complexity {selectedSubmission.complexity.toLowerCase()} • Generated {formatDate(selectedSubmission.created_at)}</p>
+                    <p className="mt-1 font-medium">Complexity {complexityLabel} • Generated {formatDate(selectedSubmission.created_at)}</p>
                   </div>
                 </div>
               </section>

@@ -12,8 +12,9 @@ export interface SubmissionHistoryItem {
   title: string;
   language: string;
   created_at: string;
-  aiReviewSummary: string;
-  complexity: string;
+  code?: string | null;
+  aiReviewSummary?: string | null;
+  complexity?: string | null;
 }
 
 export interface AiReviewItem {

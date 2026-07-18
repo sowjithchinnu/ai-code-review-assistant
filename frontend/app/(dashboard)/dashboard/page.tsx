@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { AlertTriangle, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
+import { AlertTriangle, FileText, ShieldCheck, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { CodeBlock } from "@/components/ui/dashboard-visuals";
 import { useToast } from "@/components/ui/toast-provider";
-import { createSubmission, fetchAnalysisResults, fetchDashboardMetrics } from "@/lib/api";
-import type { AnalysisIssue, DashboardMetrics } from "@/lib/api";
+import { createSubmission, fetchAnalysisResults, fetchDashboardMetrics, fetchSubmissionHistory } from "@/lib/api";
+import type { AnalysisIssue, DashboardMetrics, SubmissionHistoryItem } from "@/lib/api";
+
+type ReviewTab = "summary" | "findings" | "complexity";
 
 const defaultMetrics = {
   submissions: 0,
@@ -19,25 +21,13 @@ const defaultMetrics = {
   averageCyclomaticComplexity: 0,
   reviewCoverage: 0,
   reviewQuality: 0,
-  releaseReadiness: 0,
+  releaseReadiness: 100,
   complexitySummary: { low: 0, medium: 0, high: 0 },
   latestSubmissions: [],
   latestAiReviews: [],
   languageDistribution: [],
   recentSubmissions: [],
 } as DashboardMetrics;
-
-function getScoreBand(score: number) {
-  if (score >= 85) {
-    return { label: "A", className: "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" };
-  }
-
-  if (score >= 70) {
-    return { label: "B", className: "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400" };
-  }
-
-  return { label: "C", className: "border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-400" };
-}
 
 function getDerivedIssueCounts(issues: AnalysisIssue[]) {
   const normalized = issues.map((issue) => `${issue.rule ?? ""} ${issue.message}`.toLowerCase());
@@ -57,39 +47,112 @@ function getDerivedIssueCounts(issues: AnalysisIssue[]) {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const { toast } = useToast();
   const [metrics, setMetrics] = useState<DashboardMetrics>(defaultMetrics);
+  const [currentSubmission, setCurrentSubmission] = useState<SubmissionHistoryItem | null>(null);
+  const [submittedCode, setSubmittedCode] = useState("");
   const [analysisIssues, setAnalysisIssues] = useState<AnalysisIssue[]>([]);
+  const [activeReviewTab, setActiveReviewTab] = useState<ReviewTab>("summary");
+  const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [title, setTitle] = useState("");
   const [language, setLanguage] = useState("JavaScript");
   const [inputMode, setInputMode] = useState<"paste" | "file">("paste");
   const [code, setCode] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const codePanelRef = useRef<HTMLDivElement>(null);
+
+  async function refreshCurrentReview() {
+    setIsLoading(true);
+
+    try {
+      const [dashboardData, analysisData, historyData] = await Promise.all([
+        fetchDashboardMetrics(),
+        fetchAnalysisResults(),
+        fetchSubmissionHistory({ page: 1, limit: 1 }),
+      ]);
+
+      const latestMetricSubmission = dashboardData.latestSubmissions[0] ?? null;
+      const latestHistorySubmission = historyData.submissions[0] ?? null;
+      const mergedSubmission = latestHistorySubmission
+        ? { ...(latestMetricSubmission ?? {}), ...latestHistorySubmission }
+        : latestMetricSubmission;
+
+      setMetrics(dashboardData);
+      setAnalysisIssues(analysisData);
+      setCurrentSubmission(mergedSubmission as SubmissionHistoryItem | null);
+      setSubmittedCode(mergedSubmission?.code ?? "");
+    } catch (err) {
+      console.warn(err);
+      toast({
+        title: "Unable to refresh review",
+        description: "Could not load the latest review details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
-    const load = async () => {
+
+    const loadInitialData = async () => {
       try {
-        const [dashboardData, analysisData] = await Promise.all([fetchDashboardMetrics(), fetchAnalysisResults()]);
-        if (active) {
-          setMetrics(dashboardData);
-          setAnalysisIssues(analysisData);
-        }
+        const [dashboardData, analysisData, historyData] = await Promise.all([
+          fetchDashboardMetrics(),
+          fetchAnalysisResults(),
+          fetchSubmissionHistory({ page: 1, limit: 1 }),
+        ]);
+
+        if (!active) return;
+
+        const latestMetricSubmission = dashboardData.latestSubmissions[0] ?? null;
+        const latestHistorySubmission = historyData.submissions[0] ?? null;
+        const mergedSubmission = latestHistorySubmission
+          ? { ...(latestMetricSubmission ?? {}), ...latestHistorySubmission }
+          : latestMetricSubmission;
+
+        setMetrics(dashboardData);
+        setAnalysisIssues(analysisData);
+        setCurrentSubmission(mergedSubmission as SubmissionHistoryItem | null);
+        setSubmittedCode(mergedSubmission?.code ?? "");
       } catch (err) {
         console.error(err);
-        toast({ title: "Unable to load metrics", description: "Falling back to defaults", variant: "destructive" });
+        toast({
+          title: "Unable to load current review",
+          description: "Review data is unavailable right now.",
+          variant: "destructive",
+        });
+      } finally {
+        if (active) setIsLoading(false);
       }
     };
-    load();
-    return () => { active = false; };
+
+    loadInitialData();
+
+    return () => {
+      active = false;
+    };
   }, [toast]);
+
+  useEffect(() => {
+    if (highlightedLine === null) return;
+
+    const timeout = window.setTimeout(() => {
+      const target = codePanelRef.current?.querySelector(`[data-line-number="${highlightedLine}"]`) as HTMLElement | null;
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+
+    return () => window.clearTimeout(timeout);
+  }, [highlightedLine, submittedCode]);
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
+
     if (!title.trim()) {
       toast({ title: "Title required", description: "Please provide a title for the submission.", variant: "destructive" });
       return;
@@ -106,17 +169,20 @@ export default function DashboardPage() {
     }
 
     setIsSubmitting(true);
+
     try {
-      await createSubmission({ title: title.trim(), language, code: inputMode === "paste" ? code : undefined, file: inputMode === "file" ? selectedFile : null });
-      toast({ title: "Submitted", description: "Submission received. Analysis will appear shortly.", variant: "success" });
-      try {
-        const [dashboardData, analysisData] = await Promise.all([fetchDashboardMetrics(), fetchAnalysisResults()]);
-        setMetrics(dashboardData);
-        setAnalysisIssues(analysisData);
-      } catch (err) {
-        console.warn("Failed to refresh metrics after submit", err);
-      }
-      router.push("/analysis");
+      await createSubmission({
+        title: title.trim(),
+        language,
+        code: inputMode === "paste" ? code : undefined,
+        file: inputMode === "file" ? selectedFile : null,
+      });
+
+      toast({ title: "Submitted", description: "Your analysis will appear below shortly.", variant: "success" });
+      setTitle("");
+      setCode("");
+      setSelectedFile(null);
+      await refreshCurrentReview();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Submission failed";
       toast({ title: "Submission failed", description: message, variant: "destructive" });
@@ -125,104 +191,20 @@ export default function DashboardPage() {
     }
   }
 
-  const metricsState = metrics ?? defaultMetrics;
-  const scoreBand = getScoreBand(Math.round(metricsState.reviewQuality));
   const issueCounts = getDerivedIssueCounts(analysisIssues);
-  const maxLanguageCount = Math.max(1, ...metricsState.languageDistribution.map((item) => item.count));
+  const reviewTabs: Array<{ value: ReviewTab; label: string }> = [
+    { value: "summary", label: "AI Summary" },
+    { value: "findings", label: "Findings" },
+    { value: "complexity", label: "Complexity" },
+  ];
 
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">Code quality overview</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">Quality dashboard</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Review score, issues, complexity, and language breakdown come directly from the backend metrics.</p>
-          </div>
-          <Badge className={scoreBand.className}>{scoreBand.label} score</Badge>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <TrendingUp className="h-4 w-4" />
-              Overall review score
-            </div>
-            <p className="mt-3 text-3xl font-semibold">{Math.round(metricsState.reviewQuality)}%</p>
-            <p className="mt-1 text-sm text-muted-foreground">Release readiness {Math.round(metricsState.releaseReadiness)}%</p>
-          </div>
-
-          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <AlertTriangle className="h-4 w-4" />
-              Bugs
-            </div>
-            <p className="mt-3 text-3xl font-semibold">{issueCounts.bugs}</p>
-            <p className="mt-1 text-sm text-muted-foreground">From backend analysis findings</p>
-          </div>
-
-          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <ShieldCheck className="h-4 w-4" />
-              Security issues
-            </div>
-            <p className="mt-3 text-3xl font-semibold">{issueCounts.securityIssues}</p>
-            <p className="mt-1 text-sm text-muted-foreground">Security-focused findings</p>
-          </div>
-
-          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Sparkles className="h-4 w-4" />
-              Code smells
-            </div>
-            <p className="mt-3 text-3xl font-semibold">{issueCounts.codeSmells}</p>
-            <p className="mt-1 text-sm text-muted-foreground">Warnings and maintainability notes</p>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 lg:grid-cols-[1.3fr_0.7fr]">
-          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Complexity</p>
-              <Badge variant="secondary">{metricsState.averageCyclomaticComplexity.toFixed(1)} avg</Badge>
-            </div>
-            <p className="mt-3 text-2xl font-semibold">{metricsState.complexitySummary.high} high risk</p>
-            <div className="mt-3 flex gap-2 text-sm text-muted-foreground">
-              <span>{metricsState.complexitySummary.low} low</span>
-              <span>•</span>
-              <span>{metricsState.complexitySummary.medium} medium</span>
-              <span>•</span>
-              <span>{metricsState.complexitySummary.high} high</span>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <p className="text-sm font-medium text-muted-foreground">Language distribution</p>
-            <div className="mt-3 space-y-2">
-              {metricsState.languageDistribution.length > 0 ? (
-                metricsState.languageDistribution.map((item) => (
-                  <div key={item.language}>
-                    <div className="flex items-center justify-between text-sm">
-                      <span>{item.language}</span>
-                      <span>{item.count}</span>
-                    </div>
-                    <div className="mt-1 h-2 rounded-full bg-muted">
-                      <div className="h-2 rounded-full bg-primary" style={{ width: `${(item.count / maxLanguageCount) * 100}%` }} />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No language data yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm">
         <div className="mb-4">
           <p className="text-sm font-medium text-muted-foreground">New submission</p>
-          <h3 className="text-lg font-semibold">Submit code for review</h3>
+          <h2 className="mt-1 text-xl font-semibold">Submit code for review</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Submit code right from the dashboard and keep the current review visible below.</p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -244,18 +226,28 @@ export default function DashboardPage() {
                   "C++",
                   "C",
                   "Other",
-                ].map((l) => (
-                  <option key={l} value={l}>{l}</option>
+                ].map((lang) => (
+                  <option key={lang} value={lang}>
+                    {lang}
+                  </option>
                 ))}
               </Select>
             </div>
           </div>
 
           <div className="flex gap-2">
-            <button type="button" onClick={() => setInputMode("paste")} className={`rounded-full px-4 py-2 text-sm ${inputMode === "paste" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
+            <button
+              type="button"
+              onClick={() => setInputMode("paste")}
+              className={`rounded-full px-4 py-2 text-sm ${inputMode === "paste" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
               Paste Code
             </button>
-            <button type="button" onClick={() => setInputMode("file")} className={`rounded-full px-4 py-2 text-sm ${inputMode === "file" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
+            <button
+              type="button"
+              onClick={() => setInputMode("file")}
+              className={`rounded-full px-4 py-2 text-sm ${inputMode === "file" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
               Upload File
             </button>
           </div>
@@ -267,7 +259,13 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <input ref={fileInputRef} type="file" accept=".js,.jsx,.ts,.tsx,.py,.java,.cpp,.c,.go,.rs" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".js,.jsx,.ts,.tsx,.py,.java,.cpp,.c,.go,.rs"
+                className="hidden"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+              />
               <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
                 Choose File
               </Button>
@@ -279,6 +277,148 @@ export default function DashboardPage() {
             <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Analyzing…" : "Analyze Code"}</Button>
           </div>
         </form>
+      </section>
+
+      <section className="rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">Current review</p>
+            <h3 className="mt-1 text-lg font-semibold">Live analysis</h3>
+            {currentSubmission && <p className="mt-1 text-base font-medium text-foreground/80">{currentSubmission.title}</p>}
+          </div>
+          {currentSubmission ? (
+            <Badge variant="secondary">{currentSubmission.language}</Badge>
+          ) : null}
+        </div>
+
+        {isLoading ? (
+          <div className="mt-5 rounded-2xl border border-border/60 bg-background/70 p-5 text-sm text-muted-foreground">Loading current review data…</div>
+        ) : currentSubmission ? (
+          <div className="mt-5 space-y-4">
+            <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Submitted source</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{currentSubmission.title}</p>
+                </div>
+                <Badge variant="secondary">{currentSubmission.language}</Badge>
+              </div>
+              <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-slate-950/95 shadow-inner" ref={codePanelRef}>
+                <div className="max-h-[32rem] overflow-auto">
+                  <CodeBlock
+                    code={submittedCode || "// No source code available for this submission yet."}
+                    language={currentSubmission.language || "text"}
+                    title={`${currentSubmission.title}.${currentSubmission.language || "txt"}`}
+                    className="rounded-none border-0 shadow-none"
+                    showLineNumbers
+                    highlightedLineNumber={highlightedLine ?? undefined}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 border-b border-border/60 pb-4">
+              {reviewTabs.map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setActiveReviewTab(tab.value)}
+                  className={`rounded-full px-3 py-1.5 text-sm ${activeReviewTab === tab.value ? "bg-primary text-primary-foreground" : "bg-muted/50 text-muted-foreground"}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {activeReviewTab === "summary" ? (
+              <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Sparkles className="h-4 w-4" />
+                  AI review summary
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">
+                  {currentSubmission.aiReviewSummary || "No AI summary available yet."}
+                </p>
+              </div>
+            ) : null}
+
+            {activeReviewTab === "findings" ? (
+              <div className="space-y-3">
+                {analysisIssues.length > 0 ? (
+                  analysisIssues.map((issue, index) => (
+                    <button
+                      type="button"
+                      key={`${issue.rule ?? "finding"}-${issue.line ?? index}`}
+                      onClick={() => {
+                        setHighlightedLine(issue.line ?? null);
+                      }}
+                      className="w-full rounded-2xl border border-border/60 bg-background/70 p-4 text-left transition-colors hover:border-primary/50"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">{issue.rule || "Finding"}</p>
+                            <Badge variant={issue.severity.toLowerCase() === "error" ? "destructive" : "secondary"}>{issue.severity}</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">{issue.message}</p>
+                        </div>
+                        <Badge variant="outline">Line {issue.line ?? "n/a"}</Badge>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
+                    No findings have been reported for this submission yet.
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {activeReviewTab === "complexity" ? (
+              <div className="grid gap-3 lg:grid-cols-3">
+                <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <AlertTriangle className="h-4 w-4" />
+                    Complexity
+                  </div>
+                  <p className="mt-3 text-2xl font-semibold">{currentSubmission.complexity || "—"}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Average cyclomatic complexity {metrics.averageCyclomaticComplexity.toFixed(1)}.</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <ShieldCheck className="h-4 w-4" />
+                    Review health
+                  </div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+                      <span className="text-muted-foreground">Bugs</span>
+                      <span className="font-semibold">{issueCounts.bugs}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+                      <span className="text-muted-foreground">Security</span>
+                      <span className="font-semibold">{issueCounts.securityIssues}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+                      <span className="text-muted-foreground">Code smells</span>
+                      <span className="font-semibold">{issueCounts.codeSmells}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <FileText className="h-4 w-4" />
+                    Submitted
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-foreground">{new Date(currentSubmission.created_at).toLocaleString()}</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-border/60 bg-background/70 p-5 text-sm text-muted-foreground">
+            No active review is available yet. Submit your code above to start analysis. Previous submissions remain in Reviews.
+          </div>
+        )}
       </section>
     </div>
   );

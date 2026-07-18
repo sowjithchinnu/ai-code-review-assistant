@@ -6,6 +6,8 @@ interface CodeBlockProps {
   language?: string;
   title?: string;
   className?: string;
+  showLineNumbers?: boolean;
+  highlightedLineNumber?: number | null;
 }
 
 function highlightCode(code: string) {
@@ -71,7 +73,9 @@ function highlightCode(code: string) {
   });
 }
 
-export function CodeBlock({ code, language = "ts", title, className }: CodeBlockProps) {
+export function CodeBlock({ code, language = "ts", title, className, showLineNumbers = false, highlightedLineNumber = null }: CodeBlockProps) {
+  const lines = code.split("\n");
+
   return (
     <div className={cn("overflow-hidden rounded-2xl border border-border/60 bg-slate-950 text-sm shadow-inner", className)}>
       <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-300">
@@ -80,9 +84,35 @@ export function CodeBlock({ code, language = "ts", title, className }: CodeBlock
           {language}
         </span>
       </div>
-      <pre className="overflow-x-auto p-4 text-[13px] leading-6 text-slate-100">
-        <code>{highlightCode(code)}</code>
-      </pre>
+      <div className="max-h-[30rem] overflow-auto">
+        <pre className="overflow-x-auto p-4 text-[13px] leading-6 text-slate-100">
+          <code className="block font-mono">
+            {showLineNumbers ? (
+              lines.map((line, index) => {
+                const lineNumber = index + 1;
+                const isHighlighted = highlightedLineNumber !== null && lineNumber === highlightedLineNumber;
+
+                return (
+                  <div
+                    key={`${lineNumber}-${line}`}
+                    data-line-number={lineNumber}
+                    className={cn("flex min-h-[1.5rem]", isHighlighted && "bg-amber-100/80 text-amber-950 dark:bg-amber-900/30 dark:text-amber-200")}
+                  >
+                    <span className="mr-4 w-10 shrink-0 select-none border-r border-white/10 pr-3 text-right text-[11px] text-slate-500">
+                      {lineNumber}
+                    </span>
+                    <span className="flex-1 whitespace-pre break-normal">
+                      {highlightCode(line)}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              highlightCode(code)
+            )}
+          </code>
+        </pre>
+      </div>
     </div>
   );
 }

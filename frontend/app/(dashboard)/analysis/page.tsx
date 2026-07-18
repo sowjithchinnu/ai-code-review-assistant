@@ -79,7 +79,7 @@ export default function AnalysisPage() {
   return (
     <PageTransition className="space-y-5">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Analysis</h2>
+        <h2 className="text-xl font-semibold">Analysis</h2>
         <p className="mt-1 text-sm text-muted-foreground">Static analysis findings from the backend, presented in a compact Sonar-style layout.</p>
       </div>
 
@@ -105,21 +105,21 @@ export default function AnalysisPage() {
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
               <p className="text-sm font-medium text-muted-foreground">Issues</p>
-              <p className="mt-2 text-2xl font-semibold">{issues.length}</p>
+              <p className="mt-2 text-xl font-semibold">{issues.length}</p>
             </div>
             <div className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <AlertTriangle className="h-4 w-4" />
                 Bugs
               </div>
-              <p className="mt-2 text-2xl font-semibold">{bugs}</p>
+              <p className="mt-2 text-xl font-semibold">{bugs}</p>
             </div>
             <div className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <ShieldCheck className="h-4 w-4" />
                 Security issues
               </div>
-              <p className="mt-2 text-2xl font-semibold">{securityIssues}</p>
+              <p className="mt-2 text-xl font-semibold">{securityIssues}</p>
             </div>
           </div>
 
