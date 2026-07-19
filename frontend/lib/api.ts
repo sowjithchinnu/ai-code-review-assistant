@@ -75,14 +75,25 @@ interface DashboardMetricsResponse {
   message?: string;
 }
 
-export async function fetchAnalysisResults(): Promise<AnalysisIssue[]> {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+function getAuthToken(): string | null {
+  return typeof window !== "undefined" ? localStorage.getItem("token") : null;
+}
 
+function buildAuthHeaders() {
+  const token = getAuthToken();
+
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
+
+export async function fetchAnalysisResults(): Promise<AnalysisIssue[]> {
   const response = await fetch(`${API_URL}/api/submissions/analysis`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: buildAuthHeaders(),
   });
 
   const data: AnalysisResponse = await response.json();
@@ -101,8 +112,6 @@ export async function fetchSubmissionHistory(params: {
   page?: number;
   limit?: number;
 } = {}) {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const query = new URLSearchParams();
 
   if (params.search) {
@@ -128,9 +137,7 @@ export async function fetchSubmissionHistory(params: {
   const response = await fetch(
     `${API_URL}/api/submissions${query.toString() ? `?${query.toString()}` : ""}`,
     {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: buildAuthHeaders(),
     }
   );
 
@@ -147,13 +154,8 @@ export async function fetchSubmissionHistory(params: {
 }
 
 export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
-
   const response = await fetch(`${API_URL}/api/dashboard/metrics`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: buildAuthHeaders(),
   });
 
   const data: DashboardMetricsResponse = await response.json();
@@ -199,9 +201,6 @@ export async function createSubmission(payload: {
   code?: string;
   file?: File | null;
 }): Promise<{ success: boolean; message?: string }> {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
-
   if (payload.file) {
     const formData = new FormData();
     formData.append("title", payload.title);
@@ -210,9 +209,7 @@ export async function createSubmission(payload: {
 
     const response = await fetch(`${API_URL}/api/submissions`, {
       method: "POST",
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: buildAuthHeaders(),
       body: formData,
     });
 
@@ -232,7 +229,7 @@ export async function createSubmission(payload: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...buildAuthHeaders(),
     },
     body: JSON.stringify({
       title: payload.title,

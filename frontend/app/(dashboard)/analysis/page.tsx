@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState, MetricsSkeleton, PageTransition, TableSkeleton } from "@/components/ui/dashboard-visuals";
-import { fetchAnalysisResults, type AnalysisIssue } from "@/lib/api";
+import { fetchAnalysisResults, fetchSubmissionHistory, type AnalysisIssue } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -40,6 +40,7 @@ function SeverityBadge({ severity }: { severity: string }) {
 
 export default function AnalysisPage() {
   const [issues, setIssues] = useState<AnalysisIssue[]>([]);
+  const [latestTitle, setLatestTitle] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,15 +49,21 @@ export default function AnalysisPage() {
 
     async function loadAnalysis() {
       try {
-        const results = await fetchAnalysisResults();
+        const [analysisResults, historyResult] = await Promise.all([
+          fetchAnalysisResults(),
+          fetchSubmissionHistory({ page: 1, limit: 1, date: "newest" }),
+        ]);
+
         if (isMounted) {
-          setIssues(results);
+          setIssues(analysisResults);
+          setLatestTitle(historyResult.submissions?.[0]?.title ?? null);
           setError(null);
         }
       } catch (err) {
         if (isMounted) {
           setError(err instanceof Error ? err.message : "Failed to load analysis");
           setIssues([]);
+          setLatestTitle(null);
         }
       } finally {
         if (isMounted) {
@@ -80,7 +87,7 @@ export default function AnalysisPage() {
     <PageTransition className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold">Analysis</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Static analysis findings from the backend, presented in a compact Sonar-style layout.</p>
+        {latestTitle ? <p className="mt-2 text-sm font-medium text-foreground/80">Latest submission: {latestTitle}</p> : null}
       </div>
 
       {isLoading ? (

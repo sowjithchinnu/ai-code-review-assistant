@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, FileText, ShieldCheck, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,39 @@ function getDerivedIssueCounts(issues: AnalysisIssue[]) {
   return { bugs, securityIssues, codeSmells };
 }
 
+// Severity helpers removed in favor of static 'error' badge rendering in Findings
+
+function getFileExtension(language: string) {
+  switch (language.toLowerCase()) {
+    case "javascript":
+      return ".js";
+    case "typescript":
+      return ".ts";
+    case "python":
+      return ".py";
+    case "java":
+      return ".java";
+    case "c++":
+      return ".cpp";
+    case "c":
+      return ".c";
+    default:
+      return ".txt";
+  }
+}
+
+function formatSubmissionFileName(title: string, language: string) {
+  const trimmed = title?.trim() || "submission";
+  if (/\.[^.]+$/.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+
+  const baseName = trimmed.replace(/\s+/g, "-").toLowerCase();
+  return `${baseName}${getFileExtension(language)}`;
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
   const { toast } = useToast();
   const [metrics, setMetrics] = useState<DashboardMetrics>(defaultMetrics);
   const [currentSubmission, setCurrentSubmission] = useState<SubmissionHistoryItem | null>(null);
@@ -72,7 +105,7 @@ export default function DashboardPage() {
       const [dashboardData, analysisData, historyData] = await Promise.all([
         fetchDashboardMetrics(),
         fetchAnalysisResults(),
-        fetchSubmissionHistory({ page: 1, limit: 1 }),
+        fetchSubmissionHistory({ page: 1, limit: 1, date: "newest" }),
       ]);
 
       const latestMetricSubmission = dashboardData.latestSubmissions[0] ?? null;
@@ -87,6 +120,12 @@ export default function DashboardPage() {
       setSubmittedCode(mergedSubmission?.code ?? "");
     } catch (err) {
       console.warn(err);
+      const message = err instanceof Error ? err.message.toLowerCase() : "";
+      if (message.includes("unauthorized") || message.includes("access denied")) {
+        router.push("/login");
+        return;
+      }
+
       toast({
         title: "Unable to refresh review",
         description: "Could not load the latest review details.",
@@ -105,7 +144,7 @@ export default function DashboardPage() {
         const [dashboardData, analysisData, historyData] = await Promise.all([
           fetchDashboardMetrics(),
           fetchAnalysisResults(),
-          fetchSubmissionHistory({ page: 1, limit: 1 }),
+          fetchSubmissionHistory({ page: 1, limit: 1, date: "newest" }),
         ]);
 
         if (!active) return;
@@ -122,6 +161,12 @@ export default function DashboardPage() {
         setSubmittedCode(mergedSubmission?.code ?? "");
       } catch (err) {
         console.error(err);
+        const message = err instanceof Error ? err.message.toLowerCase() : "";
+        if (message.includes("unauthorized") || message.includes("access denied")) {
+          router.push("/login");
+          return;
+        }
+
         toast({
           title: "Unable to load current review",
           description: "Review data is unavailable right now.",
@@ -137,7 +182,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [toast]);
+  }, [toast, router]);
 
   useEffect(() => {
     if (highlightedLine === null) return;
@@ -149,6 +194,8 @@ export default function DashboardPage() {
 
     return () => window.clearTimeout(timeout);
   }, [highlightedLine, submittedCode]);
+
+  
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -281,10 +328,15 @@ export default function DashboardPage() {
 
       <section className="rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">Current review</p>
-            <h3 className="mt-1 text-lg font-semibold">Live analysis</h3>
-            {currentSubmission && <p className="mt-1 text-base font-medium text-foreground/80">{currentSubmission.title}</p>}
+          <div className="space-y-2">
+            <div className="inline-flex flex-wrap items-center gap-2">
+              <h3 className="text-lg font-semibold">Current Review</h3>
+              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                Review Complete
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">Analysis complete</p>
+            {currentSubmission && <p className="text-base font-medium text-foreground/80">{currentSubmission.title}</p>}
           </div>
           {currentSubmission ? (
             <Badge variant="secondary">{currentSubmission.language}</Badge>
@@ -296,12 +348,14 @@ export default function DashboardPage() {
         ) : currentSubmission ? (
           <div className="mt-5 space-y-4">
             <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Submitted source</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{currentSubmission.title}</p>
+                  <p className="mt-1 text-lg font-semibold">{formatSubmissionFileName(currentSubmission.title, currentSubmission.language)}</p>
                 </div>
-                <Badge variant="secondary">{currentSubmission.language}</Badge>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 dark:bg-slate-900/30 dark:text-slate-300">
+                  {currentSubmission.language}
+                </span>
               </div>
               <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-slate-950/95 shadow-inner" ref={codePanelRef}>
                 <div className="max-h-[32rem] overflow-auto">
@@ -349,20 +403,32 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       key={`${issue.rule ?? "finding"}-${issue.line ?? index}`}
-                      onClick={() => {
-                        setHighlightedLine(issue.line ?? null);
-                      }}
+                      onClick={() => setHighlightedLine(issue.line ?? null)}
                       className="w-full rounded-2xl border border-border/60 bg-background/70 p-4 text-left transition-colors hover:border-primary/50"
                     >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium">{issue.rule || "Finding"}</p>
-                            <Badge variant={issue.severity.toLowerCase() === "error" ? "destructive" : "secondary"}>{issue.severity}</Badge>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-3">
+                            <p className="text-base font-semibold text-foreground lowercase">{issue.rule ?? "finding"}</p>
+                            <span
+                              className="rounded-full px-2 py-0.5 text-xs font-semibold"
+                              style={{
+                                backgroundColor: "#3b0f12",
+                                color: "#f06262",
+                                border: "1px solid rgba(0,0,0,0.45)",
+                                boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.25)",
+                              }}
+                            >
+                              error
+                            </span>
                           </div>
-                          <p className="mt-2 text-sm text-muted-foreground">{issue.message}</p>
+
+                          <p className="mt-3 text-sm leading-6 text-muted-foreground">{issue.message}</p>
                         </div>
-                        <Badge variant="outline">Line {issue.line ?? "n/a"}</Badge>
+
+                        <div className="flex-shrink-0">
+                          <span className="rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground">Line {issue.line ?? "n/a"}</span>
+                        </div>
                       </div>
                     </button>
                   ))

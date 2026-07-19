@@ -230,7 +230,11 @@ export default function ReviewsPage() {
                   </TableHeader>
                   <TableBody>
                     {submissions.map((submission) => (
-                      <TableRow key={submission.id} className="cursor-pointer transition-colors hover:bg-muted/50" onClick={() => setSelectedSubmission(submission)}>
+                      <TableRow
+                        key={submission.id}
+                        className={`cursor-pointer transition-colors ${selectedSubmission?.id === submission.id ? "bg-muted/90" : "hover:bg-muted/50"}`}
+                        onClick={() => setSelectedSubmission(submission)}
+                      >
                         <TableCell className="font-medium">{submission.title}</TableCell>
                         <TableCell>{submission.language}</TableCell>
                         <TableCell>{formatDate(submission.created_at)}</TableCell>
@@ -264,6 +268,10 @@ export default function ReviewsPage() {
             <FileText className="h-4 w-4 text-muted-foreground" />
             <h3 className="font-semibold">Review detail</h3>
           </div>
+
+          {selectedSubmission ? (
+            <p className="mt-2 text-sm text-muted-foreground">{selectedSubmission.title}</p>
+          ) : null}
 
           {!selectedSubmission ? (
             <EmptyState icon={FileText} title="Choose a submission" description="Select a row to review its backend-backed summary and analysis context." />

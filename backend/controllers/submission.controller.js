@@ -307,6 +307,7 @@ const getSubmissions = async (req, res, next) => {
           id: row.id,
           title: row.title,
           language: row.language,
+          code: row.code,
           created_at: row.created_at,
           aiReviewSummary,
           complexity,
