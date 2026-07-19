@@ -4,6 +4,23 @@ An AI-powered code review platform that helps developers analyze source code, de
 
 ---
 
+## Dashboard
+
+![Dashboard](screenshots/Screenshot 2026-07-19 at 21.15.11.png)
+
+![Dashboard](screenshots/Screenshot 2026-07-19 at 21.13.45.png)
+
+## Review History
+
+![Dashboard](screenshots/Screenshot 2026-07-19 at 21.14.21.png)
+
+## Live Analysis
+
+![Dashboard](screenshots/Screenshot 2026-07-19 at 21.14.40.png)
+
+
+---
+
 ## 🚀 Live Demo
 
 - **Frontend:** https://ai-code-review-assistant-puce-nu.vercel.app
@@ -185,24 +202,6 @@ npm run dev
 
 ---
 
-# 📸 Screenshots
-
-## Dashboard
-
-![Dashboard](screenshots/screenshots/Screenshot 2026-07-19 at 21.15.11.png)
-
-![Dashboard](screenshots/screenshots/Screenshot 2026-07-19 at 21.13.45.png)
-
-## Review History
-
-![Dashboard](screenshots/screenshots/Screenshot 2026-07-19 at 21.14.21.png)
-
-## Live Analysis
-
-![Dashboard](screenshots/screenshots/Screenshot 2026-07-19 at 21.14.40.png)
-
-
----
 
 # 🔮 Future Improvements
 
