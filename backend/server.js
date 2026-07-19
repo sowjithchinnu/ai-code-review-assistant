@@ -3,7 +3,11 @@ require("dotenv").config();
 const app = require("./app");
 const pool = require("./config/db");
 
-const requiredEnv = ["JWT_SECRET", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"];
+const requiredEnv = [
+  "DATABASE_URL",
+  "JWT_SECRET",
+  "GROQ_API_KEY",
+];
 const missingEnv = requiredEnv.filter((name) => !process.env[name]);
 
 if (missingEnv.length > 0) {
