@@ -24,7 +24,11 @@ const signup = async (req, res, next) => {
       [name, email, hashedPassword]
     );
 
-    const token = jwt.sign({ userId: newUser.rows[0].id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign(
+      { userId: newUser.rows[0].id, id: newUser.rows[0].id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     res.status(201).json({
       success: true,
@@ -58,7 +62,11 @@ const login = async (req, res, next) => {
       });
     }
 
-    const token = jwt.sign({ userId: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign(
+      { userId: user.rows[0].id, id: user.rows[0].id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     res.status(200).json({
       success: true,

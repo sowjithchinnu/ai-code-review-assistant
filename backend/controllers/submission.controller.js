@@ -93,41 +93,80 @@ const createSubmission = async (req, res, next) => {
       });
     }
 
+    const userId = Number(req.user?.userId ?? req.user?.id ?? req.user?.user_id);
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
+    const userRecord = await pool.query("SELECT id FROM users WHERE id = $1", [userId]);
+    if (userRecord.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated user not found.",
+      });
+    }
+
     const result = await pool.query(
       `INSERT INTO submissions (user_id, title, language, code, file_name)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [req.user.userId, title, language, code, fileName]
+      [userId, title, language, code, fileName]
     );
 
     let analysis = [];
-
     let formattingIssues = [];
+    let complexityReport = null;
+    const normalizedLanguage = language.trim().toLowerCase();
+    let tempFilePath = null;
 
     if (req.file) {
-      const normalizedLanguage = language.trim().toLowerCase();
-      let analysisResult = { issues: [], formattingIssues: [] };
+      const filePath = req.file.path;
+      const analysisResult =
+        normalizedLanguage === "javascript" || normalizedLanguage === "js"
+          ? await analyzeJavaScript(filePath)
+          : normalizedLanguage === "python" || normalizedLanguage === "py"
+          ? await analyzePython(filePath)
+          : { issues: [], formattingIssues: [] };
 
-      if (normalizedLanguage === "javascript" || normalizedLanguage === "js") {
-        analysisResult = await analyzeJavaScript(req.file.path);
-      } else if (normalizedLanguage === "python" || normalizedLanguage === "py") {
-        analysisResult = await analyzePython(req.file.path);
-      }
-
-      analysis = Array.isArray(analysisResult.issues)
-        ? analysisResult.issues
-        : [];
+      analysis = Array.isArray(analysisResult.issues) ? analysisResult.issues : [];
       formattingIssues = Array.isArray(analysisResult.formattingIssues)
         ? analysisResult.formattingIssues
         : [];
+      complexityReport = await analyzeComplexity(filePath);
+    } else {
+      const extensionMap = {
+        javascript: ".js",
+        js: ".js",
+        typescript: ".ts",
+        ts: ".ts",
+        python: ".py",
+        py: ".py",
+        java: ".java",
+        go: ".go",
+        rust: ".rs",
+        cpp: ".cpp",
+        c: ".c",
+      };
+      const extension = extensionMap[normalizedLanguage] || ".txt";
+      tempFilePath = path.join(os.tmpdir(), `submission-${Date.now()}${Math.random().toString(36).slice(2)}${extension}`);
+      fs.writeFileSync(tempFilePath, code, "utf8");
+
+      const analysisResult =
+        normalizedLanguage === "javascript" || normalizedLanguage === "js"
+          ? await analyzeJavaScript(tempFilePath)
+          : normalizedLanguage === "python" || normalizedLanguage === "py"
+          ? await analyzePython(tempFilePath)
+          : { issues: [], formattingIssues: [] };
+
+      analysis = Array.isArray(analysisResult.issues) ? analysisResult.issues : [];
+      formattingIssues = Array.isArray(analysisResult.formattingIssues)
+        ? analysisResult.formattingIssues
+        : [];
+      complexityReport = await analyzeComplexity(tempFilePath);
     }
-
-    const aiReview = await generateAIReview(code, language, analysis);
-    const documentation = await generateDocumentation(code, language);
-
-    const complexityReport = req.file
-      ? await analyzeComplexity(req.file.path)
-      : null;
 
     const duplicateCodeReport = complexityReport
       ? {
@@ -165,6 +204,14 @@ const createSubmission = async (req, res, next) => {
        WHERE id = $4`,
       [reviewSummary, complexityValue, issueCount, result.rows[0].id]
     );
+
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (cleanupError) {
+        console.warn(`Failed to remove temp submission file: ${cleanupError.message}`);
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -222,9 +269,17 @@ const getSubmissions = async (req, res, next) => {
     const parsedLimit = Math.min(25, Math.max(1, Number.parseInt(String(limit), 10) || 10));
     const offset = (parsedPage - 1) * parsedLimit;
 
+    const userId = Number(req.user?.userId ?? req.user?.id ?? req.user?.user_id);
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
     const clauses = [];
-    const values = [req.user.userId];
-    const countValues = [req.user.userId];
+    const values = [userId];
+    const countValues = [userId];
     let index = 2;
 
     if (search) {
