@@ -329,13 +329,39 @@ async function runCommand(command) {
 }
 
 async function analyzeJavaScript(filePath) {
+  console.log("=== analyzeJavaScript ENTERED ===", filePath);
   const resolvedPath = path.resolve(filePath);
   const command = `npx eslint --no-ignore ${JSON.stringify(resolvedPath)} -f json`;
 
   try {
+    try {
+      console.info(`Running ESLint on ${resolvedPath}`);
+      console.info(`ESLint command: ${command}`);
+      console.info(`Working directory: ${process.cwd()}`);
+      const exists = fs.existsSync(resolvedPath);
+      console.info(`Resolved path exists: ${exists}`);
+      if (exists) {
+        try {
+          const s = fs.statSync(resolvedPath);
+          console.info(`Resolved path size: ${s.size} bytes`);
+        } catch (e) {}
+        try {
+          const sample = fs.readFileSync(resolvedPath, "utf8");
+          console.info(`Resolved path content length: ${sample.length}`);
+        } catch (e) {
+          console.info(`Failed to read resolved path for logging: ${e?.message ?? e}`);
+        }
+      }
+    } catch (e) {
+      console.warn(`ESLint pre-run logging failed: ${e?.message ?? e}`);
+    }
     const { stdout } = await runCommand(command);
+    console.info(`ESLint raw stdout length: ${typeof stdout === "string" ? stdout.length : 0}`);
+    console.info(`ESLint raw stdout (truncated 3k): ${typeof stdout === "string" ? stdout.slice(0, 3000) : stdout}`);
     const results = parseJsonOutput(stdout);
+    console.info(`Parsed ESLint results length: ${Array.isArray(results) ? results.length : 0}`);
     const eslintIssues = parseEslintIssues(results);
+    console.info(`ESLint issues parsed: ${eslintIssues.length}`);
 
     let code = "";
     try {
@@ -348,11 +374,14 @@ async function analyzeJavaScript(filePath) {
     const securityIssues = detectSecurityIssues(code);
     const formattingIssues = await detectFormattingIssues(filePath, code);
 
+    const combined = [...eslintIssues, ...importIssues, ...securityIssues];
+    console.log("Returning analysis:", { issues: combined.length, issuesPreview: combined.slice(0, 5) });
     return {
-      issues: [...eslintIssues, ...importIssues, ...securityIssues],
+      issues: combined,
       formattingIssues,
     };
   } catch (error) {
+    console.warn(`analyzeJavaScript() failed: ${error?.message ?? error}`);
     return {
       issues: [],
       formattingIssues: [],

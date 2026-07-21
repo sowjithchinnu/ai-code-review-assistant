@@ -1,11 +1,15 @@
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const pool = require("../config/db");
 const {
   analyzeJavaScript,
   analyzePython,
 } = require("../services/static-analysis.service");
+
+const TMP_DIR = path.join(__dirname, "../tmp");
+if (!fs.existsSync(TMP_DIR)) {
+  fs.mkdirSync(TMP_DIR, { recursive: true });
+}
 
 const {
   analyzeComplexity,
@@ -51,6 +55,28 @@ function getStyleIssues(issues) {
     : [];
 }
 
+const columnExistsCache = new Map();
+
+async function hasSubmissionColumn(columnName) {
+  if (columnExistsCache.has(columnName)) {
+    return columnExistsCache.get(columnName);
+  }
+
+  const result = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE LOWER(table_name) = LOWER($1)
+         AND LOWER(column_name) = LOWER($2)
+     ) AS exists`,
+    ["submissions", columnName]
+  );
+
+  const exists = Boolean(result.rows[0]?.exists);
+  columnExistsCache.set(columnName, exists);
+  return exists;
+}
+
 function saveAnalysisCache(userId, analysisData) {
   if (!fs.existsSync(CACHE_DIR)) {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -70,9 +96,15 @@ function saveAnalysisCache(userId, analysisData) {
     path.join(CACHE_DIR, `analysis-${userId}.json`),
     JSON.stringify({ analysis: issues, formattingIssues, styleIssues, duplicateCodeReport: analysisData.duplicateCodeReport || { duplicatePercentage: 0, duplicatedBlocks: 0, duplicatedLines: 0 } })
   );
+  try {
+    console.info(`Saved analysis cache for user ${userId} (${issues.length} issues) at ${path.join(CACHE_DIR, `analysis-${userId}.json`)}`);
+  } catch (e) {
+    // ignore logging failures
+  }
 }
 
 const createSubmission = async (req, res, next) => {
+  console.log("=== SUBMISSION CONTROLLER ENTERED ===");
   try {
     const { title, language, code: bodyCode } = req.body;
 
@@ -124,6 +156,7 @@ const createSubmission = async (req, res, next) => {
 
     if (req.file) {
       const filePath = req.file.path;
+      console.log("Calling analyzeJavaScript() (file branch)");
       const analysisResult =
         normalizedLanguage === "javascript" || normalizedLanguage === "js"
           ? await analyzeJavaScript(filePath)
@@ -151,15 +184,34 @@ const createSubmission = async (req, res, next) => {
         c: ".c",
       };
       const extension = extensionMap[normalizedLanguage] || ".txt";
-      tempFilePath = path.join(os.tmpdir(), `submission-${Date.now()}${Math.random().toString(36).slice(2)}${extension}`);
+      tempFilePath = path.join(TMP_DIR, `submission-${Date.now()}${Math.random().toString(36).slice(2)}${extension}`);
       fs.writeFileSync(tempFilePath, code, "utf8");
 
+      try {
+        console.info(`Wrote temp submission file: ${tempFilePath}`);
+        const exists = fs.existsSync(tempFilePath);
+        console.info(`Temp file exists: ${exists}`);
+        if (exists) {
+          const stat = fs.statSync(tempFilePath);
+          console.info(`Temp file size: ${stat.size} bytes`);
+        }
+      } catch (e) {
+        console.warn(`Temp file logging failed: ${e?.message ?? e}`);
+      }
+
+      console.log("Calling analyzeJavaScript() (paste branch)");
       const analysisResult =
         normalizedLanguage === "javascript" || normalizedLanguage === "js"
           ? await analyzeJavaScript(tempFilePath)
           : normalizedLanguage === "python" || normalizedLanguage === "py"
           ? await analyzePython(tempFilePath)
           : { issues: [], formattingIssues: [] };
+
+      try {
+        console.info("analyzeJavaScript returned:", analysisResult && typeof analysisResult === "object" ? { issues: Array.isArray(analysisResult.issues) ? analysisResult.issues.length : 0, formattingIssues: Array.isArray(analysisResult.formattingIssues) ? analysisResult.formattingIssues.length : 0 } : analysisResult);
+      } catch (e) {
+        console.warn(`Failed to log analysisResult: ${e?.message ?? e}`);
+      }
 
       analysis = Array.isArray(analysisResult.issues) ? analysisResult.issues : [];
       formattingIssues = Array.isArray(analysisResult.formattingIssues)
@@ -180,6 +232,8 @@ const createSubmission = async (req, res, next) => {
           duplicatedLines: 0,
         };
 
+    const aiReview = await generateAIReview(code, language, analysis);
+    const documentation = await generateDocumentation(code, language);
     const styleReport = getStyleIssues(analysis);
     const reviewSummary = typeof aiReview?.summary === "string" ? aiReview.summary : "";
     const complexityValue = complexityReport?.cyclomaticComplexity ?? null;
@@ -193,17 +247,36 @@ const createSubmission = async (req, res, next) => {
       duplicateCodeReport,
     };
 
-    saveAnalysisCache(req.user.userId, analysisResult);
+    // Normalize user id for cache use (auth middleware sets req.user.userId, but normalize defensively)
+    const normalizedUserId = Number(req.user?.userId ?? req.user?.id ?? req.user?.user_id);
+    saveAnalysisCache(normalizedUserId, analysisResult);
 
-    await pool.query(
-      `UPDATE submissions
-       SET ai_review_summary = $1,
-           cyclomatic_complexity = $2,
-           issues_found = $3,
-           ai_review_created_at = NOW()
-       WHERE id = $4`,
-      [reviewSummary, complexityValue, issueCount, result.rows[0].id]
-    );
+    try {
+      console.info("Generated analysis (controller):", Array.isArray(analysis) ? analysis.length : analysis);
+    } catch (e) {
+      console.warn(`Failed to log generated analysis: ${e?.message ?? e}`);
+    }
+
+    const hasDocumentationColumn = await hasSubmissionColumn("documentation");
+    const updateQuery = hasDocumentationColumn
+      ? `UPDATE submissions
+           SET ai_review_summary = $1,
+               cyclomatic_complexity = $2,
+               issues_found = $3,
+               documentation = $4,
+               ai_review_created_at = NOW()
+           WHERE id = $5`
+      : `UPDATE submissions
+           SET ai_review_summary = $1,
+               cyclomatic_complexity = $2,
+               issues_found = $3,
+               ai_review_created_at = NOW()
+           WHERE id = $4`;
+    const updateParams = hasDocumentationColumn
+      ? [reviewSummary, complexityValue, issueCount, JSON.stringify(documentation), result.rows[0].id]
+      : [reviewSummary, complexityValue, issueCount, result.rows[0].id];
+
+    await pool.query(updateQuery, updateParams);
 
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       try {
@@ -212,6 +285,10 @@ const createSubmission = async (req, res, next) => {
         console.warn(`Failed to remove temp submission file: ${cleanupError.message}`);
       }
     }
+
+    try {
+      console.info(`Responding to POST /api/submissions with analysis length: ${Array.isArray(analysis) ? analysis.length : 0}`);
+    } catch (e) {}
 
     res.status(201).json({
       success: true,
@@ -232,7 +309,12 @@ const createSubmission = async (req, res, next) => {
 
 const getAnalysis = async (req, res, next) => {
   try {
-    const cachePath = path.join(CACHE_DIR, `analysis-${req.user.userId}.json`);
+    const userId = Number(req.user?.userId ?? req.user?.id ?? req.user?.user_id);
+    if (!userId || Number.isNaN(userId)) {
+      return res.json({ success: true, analysis: [] });
+    }
+
+    const cachePath = path.join(CACHE_DIR, `analysis-${userId}.json`);
 
     if (!fs.existsSync(cachePath)) {
       return res.json({
@@ -242,6 +324,11 @@ const getAnalysis = async (req, res, next) => {
     }
 
     const data = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    try {
+      console.info(`Loaded analysis cache for user ${userId} (${Array.isArray(data.analysis) ? data.analysis.length : 0} issues) from ${cachePath}`);
+    } catch (e) {
+      // ignore logging failures
+    }
 
     res.json({
       success: true,
@@ -309,7 +396,11 @@ const getSubmissions = async (req, res, next) => {
     const whereClause = clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "";
     const sortDirection = date === "oldest" ? "ASC" : "DESC";
 
-    const query = `SELECT id, title, language, code, created_at FROM submissions WHERE user_id = $1${whereClause} ORDER BY created_at ${sortDirection} LIMIT $${index} OFFSET $${index + 1}`;
+    const hasDocumentationColumn = await hasSubmissionColumn("documentation");
+    const selectedColumns = hasDocumentationColumn
+      ? "id, title, language, code, created_at, ai_review_summary, cyclomatic_complexity, documentation"
+      : "id, title, language, code, created_at, ai_review_summary, cyclomatic_complexity";
+    const query = `SELECT ${selectedColumns} FROM submissions WHERE user_id = $1${whereClause} ORDER BY created_at ${sortDirection} LIMIT $${index} OFFSET $${index + 1}`;
     const countQuery = `SELECT COUNT(*)::int AS total FROM submissions WHERE user_id = $1${whereClause}`;
 
     values.push(parsedLimit, offset);
@@ -319,56 +410,37 @@ const getSubmissions = async (req, res, next) => {
       pool.query(countQuery, countValues),
     ]);
 
-    const submissions = await Promise.all(
-      result.rows.map(async (row) => {
-        let aiReviewSummary = "";
-        let complexity = "Unavailable";
+    const submissions = result.rows.map((row) => {
+      let documentation = null;
 
-        if (row.code) {
-          const reviewResult = await generateAIReview(row.code, row.language, []);
-          if (reviewResult?.success) {
-            aiReviewSummary = reviewResult.summary || "";
-          } else {
-            aiReviewSummary = reviewResult?.message || "AI review unavailable";
-          }
-
-          const extension = String(row.language || "js")
-            .trim()
-            .toLowerCase()
-            .includes("python")
-            ? "py"
-            : "js";
-          const tempFilePath = path.join(
-            os.tmpdir(),
-            `submission-${row.id}-${Date.now()}.${extension}`
-          );
-
-          try {
-            fs.writeFileSync(tempFilePath, row.code, "utf8");
-            const complexityReport = await analyzeComplexity(tempFilePath);
-            if (complexityReport?.success) {
-              complexity = complexityReport.complexity || "Unknown";
-            }
-          } catch (error) {
-            // Complexity analysis failures should not break the history response
-          } finally {
-            if (fs.existsSync(tempFilePath)) {
-              fs.unlinkSync(tempFilePath);
-            }
-          }
+      if (row.documentation) {
+        try {
+          documentation = typeof row.documentation === "string"
+            ? JSON.parse(row.documentation)
+            : row.documentation;
+        } catch (parseError) {
+          documentation = null;
         }
+      }
 
-        return {
-          id: row.id,
-          title: row.title,
-          language: row.language,
-          code: row.code,
-          created_at: row.created_at,
-          aiReviewSummary,
-          complexity,
-        };
-      })
-    );
+      return {
+        id: row.id,
+        title: row.title,
+        language: row.language,
+        code: row.code,
+        created_at: row.created_at,
+        aiReviewSummary: row.ai_review_summary || "",
+        complexity:
+          row.cyclomatic_complexity == null
+            ? "Pending"
+            : Number(row.cyclomatic_complexity) >= 20
+            ? "High"
+            : Number(row.cyclomatic_complexity) >= 10
+            ? "Medium"
+            : "Low",
+        documentation,
+      };
+    });
 
     const totalCount = Number(countResult.rows[0]?.total || 0);
     const totalPages = Math.max(1, Math.ceil(totalCount / parsedLimit));

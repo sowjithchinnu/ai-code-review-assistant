@@ -111,8 +111,21 @@ export default function DashboardPage() {
       const latestMetricSubmission = dashboardData.latestSubmissions[0] ?? null;
       const latestHistorySubmission = historyData.submissions[0] ?? null;
       const mergedSubmission = latestHistorySubmission
-        ? { ...(latestMetricSubmission ?? {}), ...latestHistorySubmission }
-        : latestMetricSubmission;
+        ? {
+            ...(latestMetricSubmission ?? {}),
+            ...latestHistorySubmission,
+            aiReviewSummary:
+              latestHistorySubmission.aiReviewSummary ?? latestMetricSubmission?.aiReviewSummary ?? "",
+            complexity:
+              latestHistorySubmission.complexity ?? latestMetricSubmission?.complexity ?? "Pending",
+            code: latestHistorySubmission.code ?? latestMetricSubmission?.code ?? "",
+            documentation:
+              latestHistorySubmission.documentation ?? currentSubmission?.documentation ?? latestMetricSubmission?.documentation ?? null,
+          }
+        : {
+            ...(latestMetricSubmission ?? {}),
+            documentation: latestMetricSubmission?.documentation ?? currentSubmission?.documentation ?? null,
+          };
 
       setMetrics(dashboardData);
       setAnalysisIssues(analysisData);
@@ -152,15 +165,28 @@ export default function DashboardPage() {
         const latestMetricSubmission = dashboardData.latestSubmissions[0] ?? null;
         const latestHistorySubmission = historyData.submissions[0] ?? null;
         const mergedSubmission = latestHistorySubmission
-          ? { ...(latestMetricSubmission ?? {}), ...latestHistorySubmission }
-          : latestMetricSubmission;
+          ? {
+              ...(latestMetricSubmission ?? {}),
+              ...latestHistorySubmission,
+              aiReviewSummary:
+                latestHistorySubmission.aiReviewSummary ?? latestMetricSubmission?.aiReviewSummary ?? "",
+              complexity:
+                latestHistorySubmission.complexity ?? latestMetricSubmission?.complexity ?? "Pending",
+              code: latestHistorySubmission.code ?? latestMetricSubmission?.code ?? "",
+              documentation:
+                latestHistorySubmission.documentation ?? currentSubmission?.documentation ?? latestMetricSubmission?.documentation ?? null,
+            }
+          : {
+              ...(latestMetricSubmission ?? {}),
+              documentation: latestMetricSubmission?.documentation ?? currentSubmission?.documentation ?? null,
+            };
 
         setMetrics(dashboardData);
         setAnalysisIssues(analysisData);
         setCurrentSubmission(mergedSubmission as SubmissionHistoryItem | null);
         setSubmittedCode(mergedSubmission?.code ?? "");
       } catch (err) {
-        console.error(err);
+        console.warn(err);
         const message = err instanceof Error ? err.message.toLowerCase() : "";
         if (message.includes("unauthorized") || message.includes("access denied")) {
           router.push("/login");
@@ -218,7 +244,7 @@ export default function DashboardPage() {
     setIsSubmitting(true);
 
     try {
-      await createSubmission({
+      const resp = await createSubmission({
         title: title.trim(),
         language,
         code: inputMode === "paste" ? code : undefined,
@@ -229,6 +255,13 @@ export default function DashboardPage() {
       setTitle("");
       setCode("");
       setSelectedFile(null);
+
+      // If the server returned analysis in the POST response, use it immediately
+      if (resp && Array.isArray(resp.analysis)) {
+        setAnalysisIssues(resp.analysis);
+      }
+
+      // Refresh to pick up any other derived fields (history, metrics)
       await refreshCurrentReview();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Submission failed";
@@ -402,7 +435,7 @@ export default function DashboardPage() {
                   analysisIssues.map((issue, index) => (
                     <button
                       type="button"
-                      key={`${issue.rule ?? "finding"}-${issue.line ?? index}`}
+                      key={`${issue.rule ?? "finding"}-${issue.line ?? "none"}-${index}`}
                       onClick={() => setHighlightedLine(issue.line ?? null)}
                       className="w-full rounded-2xl border border-border/60 bg-background/70 p-4 text-left transition-colors hover:border-primary/50"
                     >
@@ -433,8 +466,18 @@ export default function DashboardPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
-                    No findings have been reported for this submission yet.
+                  <div className="rounded-2xl border border-emerald-500/40 bg-emerald-100/60 p-6 text-sm text-foreground shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white">
+                        ✓
+                      </span>
+                      <div>
+                        <p className="text-base font-semibold">Great job! Your code passed static analysis.</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          No linting errors, code smells, or security findings were detected.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -479,6 +522,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             ) : null}
+
           </div>
         ) : (
           <div className="mt-5 rounded-2xl border border-border/60 bg-background/70 p-5 text-sm text-muted-foreground">

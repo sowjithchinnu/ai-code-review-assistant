@@ -105,7 +105,11 @@ export default function AnalysisPage() {
         <EmptyState
           icon={ScanSearch}
           title="No analysis results"
-          description="Upload a JavaScript or Python file via a submission to run static analysis. Results will appear here."
+          description={
+            latestTitle
+              ? "No issues were found in the latest submission. Your code looks clean."
+              : "Upload a JavaScript or Python file via a submission to run static analysis. Results will appear here."
+          }
         />
       ) : (
         <>

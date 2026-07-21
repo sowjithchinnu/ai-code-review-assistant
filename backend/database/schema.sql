@@ -76,6 +76,7 @@ CREATE TABLE submissions (
     ai_review_summary TEXT,
     cyclomatic_complexity NUMERIC(6,2),
     issues_found INT DEFAULT 0,
+    documentation TEXT,
     ai_review_created_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

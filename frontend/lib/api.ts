@@ -7,6 +7,13 @@ export interface AnalysisIssue {
   message: string;
 }
 
+export interface DocumentationItem {
+  summary?: string;
+  functions?: Array<{ name?: string; description?: string; parameters?: string[]; returns?: string }>;
+  classes?: Array<{ name?: string; description?: string; methods?: string[] }>;
+  apiEndpoints?: Array<{ method?: string; path?: string; description?: string }>;
+}
+
 export interface SubmissionHistoryItem {
   id: number;
   title: string;
@@ -15,6 +22,7 @@ export interface SubmissionHistoryItem {
   code?: string | null;
   aiReviewSummary?: string | null;
   complexity?: string | null;
+  documentation?: DocumentationItem | null;
 }
 
 export interface AiReviewItem {
@@ -200,32 +208,32 @@ export async function createSubmission(payload: {
   language: string;
   code?: string;
   file?: File | null;
-}): Promise<{ success: boolean; message?: string }> {
-  if (payload.file) {
-    const formData = new FormData();
-    formData.append("title", payload.title);
-    formData.append("language", payload.language);
-    formData.append("file", payload.file);
-
-    const response = await fetch(`${API_URL}/api/submissions`, {
-      method: "POST",
-      headers: buildAuthHeaders(),
-      body: formData,
-    });
-
+}): Promise<any> {
+  const makeFetch = async (requestInit: RequestInit) => {
+    const response = await fetch(`${API_URL}/api/submissions`, requestInit);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
       throw new Error(data.message ?? "Failed to create submission");
     }
 
-    return {
-      success: true,
-      message: data.message,
-    };
+    return data;
+  };
+
+  if (payload.file) {
+    const formData = new FormData();
+    formData.append("title", payload.title);
+    formData.append("language", payload.language);
+    formData.append("file", payload.file);
+
+    return makeFetch({
+      method: "POST",
+      headers: buildAuthHeaders(),
+      body: formData,
+    });
   }
 
-  const response = await fetch(`${API_URL}/api/submissions`, {
+  return makeFetch({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -237,17 +245,6 @@ export async function createSubmission(payload: {
       code: payload.code ?? "",
     }),
   });
-
-  const data = await response.json();
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message ?? "Failed to create submission");
-  }
-
-  return {
-    success: true,
-    message: data.message,
-  };
 }
 
 export async function deleteSubmission(submissionId: number): Promise<{ success: boolean; message?: string }> {
